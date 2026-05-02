@@ -123,7 +123,7 @@ Realistisch waere nur ein kleiner WordPress-Shortcode, der ein iFrame ausgibt. D
 
 Geeignete Optionen:
 
-- Vercel: einfach fuer Next.js, aber fuer produktive Buchungen bitte externe Datenbank nutzen
+- Vercel: empfohlen fuer diese Next.js-App, zusammen mit Neon PostgreSQL
 - Render/Railway: Node.js-App plus externe Datenbank
 - Hetzner VPS: Node.js mit PM2 oder Docker, Datenbank mit Backup
 - Docker-Server: App als Container betreiben
@@ -152,12 +152,85 @@ https://buchung.tveuropabad-marbach.de
 
 Optional kann eine WordPress-Seite "Platz buchen" erstellt werden, die auf die Subdomain weiterleitet oder ein iFrame enthaelt.
 
+## Vercel und Neon PostgreSQL
+
+Das Projekt ist fuer PostgreSQL/Neon konfiguriert:
+
+```prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+```
+
+Die alte SQLite-Migrationshistorie wurde durch eine saubere PostgreSQL-Initialmigration ersetzt:
+
+```text
+prisma/migrations/20260503000100_init_postgresql/migration.sql
+```
+
+### Neon DATABASE_URL in Vercel setzen
+
+In Vercel:
+
+1. Projekt oeffnen
+2. Settings / Environment Variables oeffnen
+3. `DATABASE_URL` setzen
+4. Neon-Verbindungszeichenfolge eintragen, z. B.:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/neondb?sslmode=require
+```
+
+5. Variable fuer Production und Preview aktivieren
+6. Deployment neu starten
+
+Wichtig: Fuer Neon sollte die URL `sslmode=require` enthalten.
+
+### Migrationen ausfuehren
+
+Vor oder waehrend des Deployments muessen die Prisma-Migrationen gegen Neon ausgefuehrt werden:
+
+```bash
+npx prisma migrate deploy
+```
+
+Auf Vercel kann der Build Command zum ersten Livegang so gesetzt werden:
+
+```bash
+npx prisma migrate deploy && npm run build
+```
+
+Alternativ koennen Migrationen manuell oder per CI ausgefuehrt werden. Danach reicht als Build Command:
+
+```bash
+npm run build
+```
+
+### Beispieldaten einspielen
+
+Die vier Tennisplaetze und Beispielwerte koennen einmalig eingespielt werden:
+
+```bash
+npm run db:seed
+```
+
+Das Seed-Skript schreibt:
+
+- Platz 1
+- Platz 2
+- Platz 3
+- Platz 4
+- Standard-Einstellungen
+- Admin-Benutzer aus `ADMIN_EMAILS`
+
 ## Befehle
 
 Lokal:
 
 ```bash
 npm install
+npx prisma generate
 npx prisma migrate dev
 npm run db:seed
 npm run dev
@@ -168,11 +241,12 @@ Production-Build:
 ```bash
 npm run lint
 npx tsc --noEmit
+npx prisma generate
 npm run build
 npm run start
 ```
 
-Auf einem Server sollte vorher die produktive Datenbank migriert werden:
+Auf Vercel/Server sollte vorher oder im Build die produktive Datenbank migriert werden:
 
 ```bash
 npx prisma migrate deploy
@@ -190,6 +264,12 @@ AUTH_SECRET=ein-langer-zufaelliger-geheimer-wert
 ADMIN_EMAILS=admin@beispiel.de,vorstand@beispiel.de
 DATABASE_URL=...
 NEXT_PUBLIC_CLUB_NAME="TV Europabad Marbach"
+```
+
+Fuer Neon/Vercel:
+
+```env
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/neondb?sslmode=require
 ```
 
 Stripe fuer echte Gastspieler-Zahlungen:
@@ -214,18 +294,20 @@ EMBEDDED_COOKIE_MODE=true
 
 ## Datenbank
 
-Aktuell ist das Projekt lokal auf SQLite konfiguriert:
+Das Projekt ist auf PostgreSQL konfiguriert und damit passend fuer Neon/Vercel:
 
 ```prisma
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 ```
 
-Fuer lokale Entwicklung ist das gut. Fuer den Livebetrieb sollte eine persistente Datenbank mit Backup genutzt werden. Empfehlenswert ist PostgreSQL. Dafuer muss in `prisma/schema.prisma` der Provider auf `postgresql` umgestellt und `DATABASE_URL` entsprechend gesetzt werden.
+Ein reiner SQLite-Betrieb ist fuer Vercel nicht geeignet, weil Vercel serverlos arbeitet und kein persistentes lokales Datenbankfile garantiert. Neon PostgreSQL ist die passende Alternative.
 
-SQLite ist nur dann fuer Produktion vertretbar, wenn der Server persistenten Speicher, Backups und keine serverlosen Dateisystem-Limits hat.
+Falls lokal weiterhin ohne Neon entwickelt werden soll, wird eine lokale PostgreSQL-Datenbank benoetigt. Einfacher ist es, lokal ebenfalls eine Neon-Branch-URL in `.env` zu setzen.
+
+Achtung: Wenn in der lokalen `.env` noch `DATABASE_URL="file:./dev.db"` steht, schlagen Prisma- und API-Aufrufe nach der PostgreSQL-Umstellung fehl. Ersetze diesen Wert durch die Neon-URL oder eine lokale PostgreSQL-URL.
 
 ## Statischer Export
 
@@ -241,23 +323,21 @@ Grund:
 
 Es gibt daher keinen empfohlenen FTP-Upload-Ordner wie `out/` oder `dist/`.
 
-## Production-Check vom 2026-05-02
+## Production-Check vom 2026-05-03
 
 Ausgefuehrt:
 
 ```bash
-npx tsc --noEmit
-npm run lint
+npx prisma generate
 npm run build
 ```
 
 Ergebnis:
 
-- TypeScript: erfolgreich
-- Lint: erfolgreich
-- Production-Build: erfolgreich
-- Node-Dependencies waren bereits installiert, daher war kein erneutes `npm install` noetig
-- `.env` enthaelt die benoetigten Schluessel fuer lokale Entwicklung
+- Prisma-Schema ist PostgreSQL-kompatibel
+- Prisma Client wurde generiert
+- Production-Build wurde mit PostgreSQL-`DATABASE_URL` geprueft
+- Fuer lokale Builds muss `DATABASE_URL` auf eine PostgreSQL-Verbindungszeichenfolge zeigen
 - Keine Debug-`console.log`-Ausgaben im Frontend gefunden
 
 Hinweis:
@@ -266,8 +346,9 @@ Hinweis:
 
 ## Offene Punkte vor Livegang
 
-- Produktionsdatenbank festlegen, idealerweise PostgreSQL
-- Prisma-Provider fuer PostgreSQL anpassen, falls Vercel/Render/Railway mit externer DB genutzt wird
+- Neon-`DATABASE_URL` in Vercel fuer Production und Preview setzen
+- PostgreSQL-Migrationen gegen Neon ausfuehren
+- Seed-Daten fuer die vier Plaetze einmalig einspielen, falls die Datenbank leer ist
 - echte Stripe-Live-Keys setzen
 - Stripe-Webhook auf `https://buchung.tveuropabad-marbach.de/api/payments/stripe-webhook` konfigurieren
 - `AUTH_SECRET` als langen Zufallswert setzen
@@ -282,3 +363,9 @@ FTP in WordPress moeglich? **Nein, nicht fuer die echte Buchungsapp.**
 Empfohlene Variante: **Variante B - separate Subdomain.**  
 iFrame moeglich? **Ja, aber nur als Einbettung einer separat laufenden App.**  
 Node.js-Server benoetigt? **Ja.**
+
+## Quellen
+
+- Next.js Static Exports: https://nextjs.org/docs/app/guides/static-exports
+- Next.js Self-Hosting: https://nextjs.org/docs/app/guides/self-hosting
+- WordPress Custom HTML Block: https://wordpress.org/documentation/article/custom-html-block/
