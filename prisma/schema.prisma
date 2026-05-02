@@ -1,0 +1,106 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id               String           @id @default(cuid())
+  name             String
+  email            String           @unique
+  role             String           @default("USER")
+  membershipStatus String           @default("EXTERNAL")
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  bookings         Booking[]
+}
+
+model Court {
+  id        Int          @id @default(autoincrement())
+  name      String       @unique
+  isActive  Boolean      @default(true)
+  notes     String?
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  bookings  Booking[]
+  slots     BookingSlot[]
+  blocks    CourtBlock[]
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  userId           String
+  courtId          Int
+  startTime        DateTime
+  endTime          DateTime
+  durationMinutes  Int
+  status           String        @default("PENDING")
+  paymentStatus    String        @default("PENDING")
+  totalAmountCents Int           @default(0)
+  expiresAt        DateTime?
+  cancelReason     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  court            Court         @relation(fields: [courtId], references: [id], onDelete: Restrict)
+  slots            BookingSlot[]
+  payment          Payment?
+
+  @@index([courtId, startTime, endTime])
+  @@index([userId, startTime])
+  @@index([status, expiresAt])
+}
+
+model BookingSlot {
+  id        String   @id @default(cuid())
+  bookingId String
+  courtId   Int
+  slotStart DateTime
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  court     Court    @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@unique([courtId, slotStart])
+  @@index([bookingId])
+}
+
+model Payment {
+  id                String          @id @default(cuid())
+  bookingId         String          @unique
+  provider          String          @default("stripe")
+  amountCents       Int
+  currency          String          @default("eur")
+  status            String          @default("PENDING")
+  providerPaymentId String?
+  providerSessionId String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  booking           Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model Settings {
+  id                        String   @id @default("default")
+  externalHourlyRateCents   Int      @default(1800)
+  openingHour               Int      @default(8)
+  closingHour               Int      @default(21)
+  slotDurationMinutes       Int      @default(30)
+  maxBookingDurationMinutes Int      @default(480)
+  cancellationRules         String   @default("Kostenfreie Stornierung bis 24 Stunden vor Spielbeginn.")
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+model CourtBlock {
+  id        String   @id @default(cuid())
+  courtId   Int
+  title     String
+  reason    String?
+  startTime DateTime
+  endTime   DateTime
+  createdAt DateTime @default(now())
+  court     Court    @relation(fields: [courtId], references: [id], onDelete: Cascade)
+
+  @@index([courtId, startTime, endTime])
+}
