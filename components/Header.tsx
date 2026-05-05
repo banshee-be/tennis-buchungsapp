@@ -59,14 +59,14 @@ export function Header({ clubName }: { clubName: string }) {
   }, []);
 
   useEffect(() => {
-    if (!authOpen) {
+    if (!authOpen && !menuOpen) {
       document.body.classList.remove("modal-open");
       return;
     }
 
     document.body.classList.add("modal-open");
     return () => document.body.classList.remove("modal-open");
-  }, [authOpen]);
+  }, [authOpen, menuOpen]);
 
   function openAuth(mode: AuthMode) {
     setAuthMode(mode);
@@ -211,24 +211,33 @@ export function Header({ clubName }: { clubName: string }) {
         </button>
 
         {menuOpen ? (
-          <div className="mobile-nav-menu">
-            <div className="mobile-nav-links">{navLinks}</div>
-            <div className="mobile-nav-auth">
-              {user ? (
-                <>
-                  <span>
-                    {user.name}
-                    <small>{membershipLabel(user)}</small>
-                  </span>
-                  <button className="ghost-button" onClick={logout} type="button">
-                    Abmelden
-                  </button>
-                </>
-              ) : (
-                <button className="button primary full" onClick={() => openAuth("login")} type="button">
-                  Login
+          <div aria-label="Mobiles Menü" aria-modal="true" className="mobile-menu-shell" role="dialog">
+            <button aria-label="Menü schließen" className="mobile-menu-backdrop" onClick={() => setMenuOpen(false)} type="button" />
+            <div className="mobile-nav-menu">
+              <div className="mobile-menu-header">
+                <strong>Menü</strong>
+                <button aria-label="Menü schließen" onClick={() => setMenuOpen(false)} type="button">
+                  ×
                 </button>
-              )}
+              </div>
+              <div className="mobile-nav-links">{navLinks}</div>
+              <div className="mobile-nav-auth">
+                {user ? (
+                  <>
+                    <span>
+                      {user.name}
+                      <small>{membershipLabel(user)}</small>
+                    </span>
+                    <button className="ghost-button" onClick={logout} type="button">
+                      Abmelden
+                    </button>
+                  </>
+                ) : (
+                  <button className="button primary full" onClick={() => openAuth("login")} type="button">
+                    Login
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ) : null}
