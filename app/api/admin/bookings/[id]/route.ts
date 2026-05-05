@@ -11,7 +11,7 @@ import {
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
-import { requireAdmin } from "@/lib/session";
+import { isVerifiedMember, requireAdmin } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -57,7 +57,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       : null;
     const courtId = Number(body?.courtId ?? existing.courtId);
     const amountCents =
-      existing.user.membershipStatus === "EXTERNAL" && parsed
+      !isVerifiedMember(existing.user) && parsed
         ? calculateAmountCents(settings.externalHourlyRateCents, parsed.durationMinutes)
         : existing.totalAmountCents;
 

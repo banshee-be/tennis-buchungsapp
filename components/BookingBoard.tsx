@@ -9,7 +9,8 @@ type User = {
   name: string;
   email: string;
   role: "USER" | "ADMIN";
-  membershipStatus: "MEMBER" | "EXTERNAL";
+  membershipType: "MEMBER" | "EXTERNAL";
+  membershipStatus: "PENDING" | "VERIFIED" | "REJECTED";
 };
 
 type SlotStatus = "free" | "booked" | "blocked" | "own";
@@ -427,7 +428,8 @@ export function BookingBoard() {
     durationMinutes <= maxDurationMinutes &&
     durationMinutes % slotDurationMinutes === 0;
   const selectedEndTime = selection ? addMinutesToTime(selection.time, durationMinutes) : null;
-  const isExternal = user?.membershipStatus === "EXTERNAL";
+  const isVerifiedMember = user?.membershipType === "MEMBER" && user.membershipStatus === "VERIFIED";
+  const isExternal = !isVerifiedMember;
   const selectedOrActiveDate = selection?.date ?? activeDay?.date ?? selectedDate;
   const periodLabel = makePeriodLabel(displayDays);
   const activeView = viewModes.find((mode) => mode.key === viewMode) ?? viewModes[0];
@@ -648,7 +650,7 @@ export function BookingBoard() {
     }
 
     if (!user) {
-      setMessage("Bitte oben mit Name und E-Mail einloggen oder registrieren.");
+      setMessage("Bitte oben einloggen oder registrieren.");
       return;
     }
 
@@ -809,11 +811,19 @@ export function BookingBoard() {
           </div>
           <div>
             <dt>Mitgliedsstatus</dt>
-            <dd>{user ? (user.membershipStatus === "MEMBER" ? "Mitglied" : "Gastspieler") : "Nicht eingeloggt"}</dd>
+            <dd>
+              {user
+                ? isVerifiedMember
+                  ? "Mitglied"
+                  : user.membershipType === "MEMBER"
+                    ? "Mitgliedsstatus wird geprüft · bis zur Bestätigung gilt Gastpreis"
+                    : "Gastspieler"
+                : "Nicht eingeloggt"}
+            </dd>
           </div>
           <div>
             <dt>Preis</dt>
-            <dd>{user?.membershipStatus === "MEMBER" ? "Kostenfrei" : euro(price)}</dd>
+            <dd>{isVerifiedMember ? "Kostenfrei" : euro(price)}</dd>
           </div>
           <div>
             <dt>Platz</dt>
@@ -957,7 +967,7 @@ export function BookingBoard() {
             </strong>
             <span>
               {formatDate(selection.date, { weekday: "short", day: "2-digit", month: "2-digit" })} · {durationLabel} ·{" "}
-              {user?.membershipStatus === "MEMBER" ? "Kostenfrei" : euro(price)}
+              {isVerifiedMember ? "Kostenfrei" : euro(price)}
             </span>
           </div>
           <button className="button primary" disabled={booking || !durationIsValid} onClick={confirmBooking} type="button">

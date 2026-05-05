@@ -11,11 +11,15 @@ model User {
   id               String           @id @default(cuid())
   name             String
   email            String           @unique
+  passwordHash     String?
   role             String           @default("USER")
-  membershipStatus String           @default("EXTERNAL")
+  membershipType   String           @default("EXTERNAL")
+  membershipStatus String           @default("VERIFIED")
+  memberNumber     String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   bookings         Booking[]
+  resetTokens      PasswordResetToken[]
 }
 
 model Court {
@@ -103,4 +107,17 @@ model CourtBlock {
   court     Court    @relation(fields: [courtId], references: [id], onDelete: Cascade)
 
   @@index([courtId, startTime, endTime])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }

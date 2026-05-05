@@ -39,12 +39,13 @@ async function main() {
   for (const email of adminEmails) {
     await prisma.user.upsert({
       where: { email },
-      update: { role: "ADMIN", membershipStatus: "MEMBER" },
+      update: { role: "ADMIN", membershipType: "MEMBER", membershipStatus: "VERIFIED" },
       create: {
         email,
         name: "Admin",
         role: "ADMIN",
-        membershipStatus: "MEMBER"
+        membershipType: "MEMBER",
+        membershipStatus: "VERIFIED"
       }
     });
   }
@@ -56,7 +57,8 @@ async function main() {
       email: "mitglied@example.org",
       name: "Mara Mitglied",
       role: "USER",
-      membershipStatus: "MEMBER"
+      membershipType: "MEMBER",
+      membershipStatus: "VERIFIED"
     }
   });
 
@@ -67,7 +69,8 @@ async function main() {
       email: "gast@example.org",
       name: "Gregor Gastspieler",
       role: "USER",
-      membershipStatus: "EXTERNAL"
+      membershipType: "EXTERNAL",
+      membershipStatus: "VERIFIED"
     }
   });
 }

@@ -10,7 +10,7 @@ type Booking = {
   status: "PENDING" | "CONFIRMED" | "CANCELLED";
   paymentStatus: "NOT_REQUIRED" | "PENDING" | "PAID" | "FAILED";
   totalAmountCents: number;
-  user?: { name: string; email: string; membershipStatus?: "MEMBER" | "EXTERNAL" };
+  user?: { name: string; email: string; membershipType?: "MEMBER" | "EXTERNAL"; membershipStatus?: "PENDING" | "VERIFIED" | "REJECTED" };
   court?: { name: string };
 };
 
@@ -19,7 +19,9 @@ type User = {
   name: string;
   email: string;
   role: "USER" | "ADMIN";
-  membershipStatus: "MEMBER" | "EXTERNAL";
+  membershipType: "MEMBER" | "EXTERNAL";
+  membershipStatus: "PENDING" | "VERIFIED" | "REJECTED";
+  memberNumber?: string | null;
   bookingCount: number;
 };
 
@@ -82,7 +84,7 @@ export function AdminDashboard() {
   const [bookingForm, setBookingForm] = useState({
     name: "",
     email: "",
-    membershipStatus: "MEMBER",
+    membershipType: "MEMBER",
     courtId: "1",
     date: today(),
     startTime: "18:00",
@@ -336,10 +338,10 @@ export function AdminDashboard() {
               />
             </label>
             <label>
-              Status
+              Kontotyp
               <select
-                value={bookingForm.membershipStatus}
-                onChange={(event) => setBookingForm({ ...bookingForm, membershipStatus: event.target.value })}
+                value={bookingForm.membershipType}
+                onChange={(event) => setBookingForm({ ...bookingForm, membershipType: event.target.value })}
               >
                 <option value="MEMBER">Mitglied</option>
                 <option value="EXTERNAL">Gastspieler</option>
@@ -427,20 +429,57 @@ export function AdminDashboard() {
               <div>
                 <strong>{user.name}</strong>
                 <p>{user.email}</p>
-                <small>{user.bookingCount} Buchungen</small>
+                <small>
+                  {user.bookingCount} Buchungen · {user.membershipType === "MEMBER" ? "Mitglied" : "Gastspieler"} ·{" "}
+                  {user.membershipStatus === "PENDING"
+                    ? "Prüfung offen"
+                    : user.membershipStatus === "REJECTED"
+                      ? "Abgelehnt"
+                      : "Bestätigt"}
+                  {user.memberNumber ? ` · Nr. ${user.memberNumber}` : ""}
+                </small>
               </div>
               <div className="row-actions">
+                <select
+                  value={user.membershipType}
+                  onChange={(event) => updateUser(user, { membershipType: event.target.value as User["membershipType"] })}
+                >
+                  <option value="MEMBER">Mitglied</option>
+                  <option value="EXTERNAL">Gastspieler</option>
+                </select>
                 <select
                   value={user.membershipStatus}
                   onChange={(event) => updateUser(user, { membershipStatus: event.target.value as User["membershipStatus"] })}
                 >
-                  <option value="MEMBER">Mitglied</option>
-                  <option value="EXTERNAL">Gastspieler</option>
+                  <option value="PENDING">Prüfung offen</option>
+                  <option value="VERIFIED">Bestätigt</option>
+                  <option value="REJECTED">Abgelehnt</option>
                 </select>
                 <select value={user.role} onChange={(event) => updateUser(user, { role: event.target.value as User["role"] })}>
                   <option value="USER">Nutzer</option>
                   <option value="ADMIN">Admin</option>
                 </select>
+                <button
+                  className="ghost-button"
+                  onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "VERIFIED" })}
+                  type="button"
+                >
+                  Mitglied bestätigen
+                </button>
+                <button
+                  className="ghost-button danger"
+                  onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "REJECTED" })}
+                  type="button"
+                >
+                  Ablehnen
+                </button>
+                <button
+                  className="ghost-button"
+                  onClick={() => updateUser(user, { membershipType: "EXTERNAL", membershipStatus: "VERIFIED", memberNumber: null })}
+                  type="button"
+                >
+                  Gastspieler
+                </button>
               </div>
             </article>
           ))}

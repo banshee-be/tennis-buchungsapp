@@ -12,7 +12,7 @@ import { handleRoute, jsonError } from "@/lib/http";
 import { createCheckoutForBooking } from "@/lib/payments";
 import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
-import { requireSession } from "@/lib/session";
+import { isVerifiedMember, requireSession } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
 
 export async function GET() {
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       return jsonError("Bitte melden Sie sich erneut an.", 401);
     }
 
-    const isMember = user.membershipStatus === "MEMBER";
+    const isMember = isVerifiedMember(user);
     const amountCents = isMember ? 0 : calculateAmountCents(settings.externalHourlyRateCents, parsed.durationMinutes);
     let bookingIdForCleanup: string | null = null;
 

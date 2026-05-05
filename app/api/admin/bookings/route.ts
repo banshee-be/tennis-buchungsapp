@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       | {
           name?: string;
           email?: string;
-          membershipStatus?: "MEMBER" | "EXTERNAL";
+          membershipType?: "MEMBER" | "EXTERNAL";
           courtId?: number;
           date?: string;
           startTime?: string;
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     }
 
     const email = body.email.trim().toLowerCase();
-    const membershipStatus = body.membershipStatus === "MEMBER" ? "MEMBER" : "EXTERNAL";
+    const membershipType = body.membershipType === "MEMBER" ? "MEMBER" : "EXTERNAL";
     const settings = await getSettings();
     const parsed = parseBookingInput(
       {
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
       settings
     );
     const amountCents =
-      membershipStatus === "EXTERNAL" ? calculateAmountCents(settings.externalHourlyRateCents, parsed.durationMinutes) : 0;
+      membershipType === "EXTERNAL" ? calculateAmountCents(settings.externalHourlyRateCents, parsed.durationMinutes) : 0;
 
     try {
       const booking = await prisma.$transaction(async (tx) => {
@@ -71,13 +71,15 @@ export async function POST(request: NextRequest) {
           where: { email },
           update: {
             name: body.name!.trim(),
-            membershipStatus,
+            membershipType,
+            membershipStatus: "VERIFIED",
             role: isAdminEmail(email) ? "ADMIN" : undefined
           },
           create: {
             name: body.name!.trim(),
             email,
-            membershipStatus,
+            membershipType,
+            membershipStatus: "VERIFIED",
             role: isAdminEmail(email) ? "ADMIN" : "USER"
           }
         });
@@ -90,7 +92,7 @@ export async function POST(request: NextRequest) {
             endTime: parsed.end,
             durationMinutes: parsed.durationMinutes,
             status: "CONFIRMED",
-            paymentStatus: body.paymentStatus ?? (membershipStatus === "MEMBER" ? "NOT_REQUIRED" : "PAID"),
+            paymentStatus: body.paymentStatus ?? (membershipType === "MEMBER" ? "NOT_REQUIRED" : "PAID"),
             totalAmountCents: amountCents
           },
           include: bookingInclude()

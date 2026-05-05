@@ -4,9 +4,14 @@ export default function BookingPage() {
   return (
     <section className="page-shell">
       <div className="section-heading">
-        <p className="eyebrow">TV Europabad Marbach</p>
+        <p className="eyebrow booking-page-eyebrow">TV Europabad Marbach</p>
         <h1>Platz buchen</h1>
-        <p>Wählen Sie Tag, Dauer und einen freien Platz. Die Verfügbarkeit wird vor dem Speichern serverseitig geprüft.</p>
+        <p className="booking-page-description">
+          <span className="desktop-only">
+            Wählen Sie Tag, Dauer und einen freien Platz. Die Verfügbarkeit wird vor dem Speichern serverseitig geprüft.
+          </span>
+          <span className="mobile-only">Wähle Datum, Dauer und Platz.</span>
+        </p>
       </div>
       <BookingBoard />
     </section>

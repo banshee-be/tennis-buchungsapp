@@ -8,18 +8,29 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     await requireAdmin();
     const { id } = await context.params;
     const body = (await request.json().catch(() => null)) as
-      | { membershipStatus?: "MEMBER" | "EXTERNAL"; role?: "USER" | "ADMIN"; name?: string }
+      | {
+          membershipType?: "MEMBER" | "EXTERNAL";
+          membershipStatus?: "PENDING" | "VERIFIED" | "REJECTED";
+          memberNumber?: string | null;
+          role?: "USER" | "ADMIN";
+          name?: string;
+        }
       | null;
 
     if (!body) {
       return jsonError("Keine Aenderungen angegeben.");
     }
 
+    const membershipStatus = body.membershipType === "EXTERNAL" ? "VERIFIED" : body.membershipStatus;
+    const memberNumber = body.membershipType === "EXTERNAL" ? null : body.memberNumber;
+
     const user = await prisma.user.update({
       where: { id },
       data: {
         name: body.name?.trim() || undefined,
-        membershipStatus: body.membershipStatus,
+        membershipType: body.membershipType,
+        membershipStatus,
+        memberNumber: memberNumber === null ? null : memberNumber?.trim() || undefined,
         role: body.role
       }
     });

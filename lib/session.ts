@@ -6,14 +6,17 @@ import { prisma } from "@/lib/prisma";
 const COOKIE_NAME = "tennis_session";
 
 export type UserRole = "USER" | "ADMIN";
-export type MembershipStatus = "MEMBER" | "EXTERNAL";
+export type MembershipType = "MEMBER" | "EXTERNAL";
+export type MembershipStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
 export type SessionUser = {
   id: string;
   name: string;
   email: string;
   role: UserRole;
+  membershipType: MembershipType;
   membershipStatus: MembershipStatus;
+  memberNumber?: string | null;
 };
 
 function getSecret() {
@@ -36,17 +39,24 @@ function verifySignature(payload: string, signature: string) {
   return timingSafeEqual(expectedBuffer, actualBuffer);
 }
 
-export function toSessionUser(user: Pick<User, "id" | "name" | "email" | "role" | "membershipStatus">): SessionUser {
+export function toSessionUser(
+  user: Pick<User, "id" | "name" | "email" | "role" | "membershipType" | "membershipStatus" | "memberNumber">
+): SessionUser {
   return {
     id: user.id,
     name: user.name,
     email: user.email,
     role: user.role === "ADMIN" ? "ADMIN" : "USER",
-    membershipStatus: user.membershipStatus === "MEMBER" ? "MEMBER" : "EXTERNAL"
+    membershipType: user.membershipType === "MEMBER" ? "MEMBER" : "EXTERNAL",
+    membershipStatus:
+      user.membershipStatus === "PENDING" || user.membershipStatus === "REJECTED" ? user.membershipStatus : "VERIFIED",
+    memberNumber: user.memberNumber
   };
 }
 
-export async function createSession(user: Pick<User, "id" | "name" | "email" | "role" | "membershipStatus">) {
+export async function createSession(
+  user: Pick<User, "id" | "name" | "email" | "role" | "membershipType" | "membershipStatus" | "memberNumber">
+) {
   const payload = Buffer.from(JSON.stringify(toSessionUser(user))).toString("base64url");
   const token = `${payload}.${sign(payload)}`;
   const cookieStore = await cookies();
@@ -115,4 +125,8 @@ export function isAdminEmail(email: string) {
     .map((entry) => entry.trim().toLowerCase())
     .filter(Boolean)
     .includes(email.trim().toLowerCase());
+}
+
+export function isVerifiedMember(user: Pick<User, "membershipType" | "membershipStatus"> | SessionUser | null | undefined) {
+  return user?.membershipType === "MEMBER" && user.membershipStatus === "VERIFIED";
 }

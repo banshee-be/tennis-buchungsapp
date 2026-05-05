@@ -162,13 +162,36 @@ export async function confirmPaidBooking(bookingId: string, providerPaymentId?: 
 
 export function bookingInclude() {
   return {
-    user: true,
+    user: {
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        membershipType: true,
+        membershipStatus: true,
+        memberNumber: true
+      }
+    },
     court: true,
     payment: true
   } satisfies Prisma.BookingInclude;
 }
 
-export function serializeBooking(booking: Booking & { user?: { name: string; email: string }; court?: { name: string } }) {
+export function serializeBooking(
+  booking: Booking & {
+    user?: {
+      id?: string;
+      name: string;
+      email: string;
+      role?: string;
+      membershipType?: string;
+      membershipStatus?: string;
+      memberNumber?: string | null;
+    };
+    court?: { name: string };
+  }
+) {
   return {
     ...booking,
     startTime: booking.startTime.toISOString(),
