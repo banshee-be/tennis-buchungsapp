@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type User = {
   id: string;
@@ -46,6 +47,7 @@ export function Header({ clubName }: { clubName: string }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const [message, setMessage] = useState("");
 
   async function loadSession() {
@@ -55,6 +57,7 @@ export function Header({ clubName }: { clubName: string }) {
   }
 
   useEffect(() => {
+    setMounted(true);
     void loadSession();
   }, []);
 
@@ -210,8 +213,9 @@ export function Header({ clubName }: { clubName: string }) {
           {user ? user.name.slice(0, 1).toUpperCase() : "☰"}
         </button>
 
-        {menuOpen ? (
-          <div aria-label="Mobiles Menü" aria-modal="true" className="mobile-menu-shell" role="dialog">
+        {mounted && menuOpen
+          ? createPortal(
+              <div aria-label="Mobiles Menü" aria-modal="true" className="mobile-menu-shell" role="dialog">
             <button aria-label="Menü schließen" className="mobile-menu-backdrop" onClick={() => setMenuOpen(false)} type="button" />
             <div className="mobile-nav-menu">
               <div className="mobile-menu-header">
@@ -239,8 +243,10 @@ export function Header({ clubName }: { clubName: string }) {
                 )}
               </div>
             </div>
-          </div>
-        ) : null}
+          </div>,
+              document.body
+            )
+          : null}
       </div>
 
       {authOpen ? (

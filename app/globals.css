@@ -4356,18 +4356,19 @@ body.modal-open {
   .mobile-menu-shell {
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: 9998;
     display: block;
     width: 100%;
-    height: 100dvh;
-    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+    min-height: 100dvh;
+    padding: 0;
     overflow: hidden;
+    isolation: isolate;
   }
 
   .mobile-menu-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    z-index: 9998;
     border: 0;
     background: rgba(12, 22, 17, 0.5);
     backdrop-filter: blur(6px);
@@ -4375,22 +4376,27 @@ body.modal-open {
 
   .mobile-nav-menu {
     position: fixed;
-    top: max(10px, env(safe-area-inset-top));
+    top: 0;
     right: 0;
-    bottom: max(10px, env(safe-area-inset-bottom));
-    z-index: 1001;
+    bottom: 0;
+    z-index: 9999;
     display: grid;
-    width: min(320px, calc(100vw - 20px));
-    max-height: calc(100dvh - max(10px, env(safe-area-inset-top)) - max(10px, env(safe-area-inset-bottom)));
+    width: min(360px, 100vw);
+    height: 100dvh;
+    max-height: 100dvh;
     align-content: start;
     gap: 12px;
-    margin-right: 10px;
-    padding: 14px;
+    margin: 0;
+    padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
     overflow-y: auto;
     border: 1px solid rgba(31, 91, 59, 0.14);
-    border-radius: 14px;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    border-radius: 0;
     background: #fff;
-    box-shadow: 0 20px 46px rgba(17, 57, 36, 0.18);
+    box-shadow: -20px 0 46px rgba(17, 57, 36, 0.18);
+    -webkit-overflow-scrolling: touch;
   }
 
   .mobile-menu-header {
