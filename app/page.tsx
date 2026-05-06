@@ -1,11 +1,5 @@
 import Link from "next/link";
-
-const features = [
-  "Vier Plaetze mit ruhiger Tagesansicht",
-  "Mitglieder buchen ohne Zahlung",
-  "Gastspieler zahlen sicher online",
-  "Admin-Bereich fuer Preise, Sperren und Nutzer"
-];
+import Image from "next/image";
 
 export default function HomePage() {
   return (
@@ -28,27 +22,20 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="court-visual" aria-label="Tennisplatz Uebersicht">
-          <div className="court-lines">
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
+        <div className="court-visual hero-photo" aria-label="Tennisanlage Marburg-Marbach">
+          <Image
+            src="/tennisanlage-hero.jpg"
+            alt="Tennisanlage Marburg-Marbach"
+            fill
+            priority
+            sizes="(max-width: 720px) 100vw, 44vw"
+            className="hero-photo-image"
+          />
           <div className="court-labels">
             <strong>4 Plaetze</strong>
             <small>Tagesansicht, Sperren und Live-Verfuegbarkeit</small>
           </div>
         </div>
-      </div>
-
-      <div className="feature-grid">
-        {features.map((feature) => (
-          <div className="feature-card" key={feature}>
-            <span className="feature-dot" />
-            <p>{feature}</p>
-          </div>
-        ))}
       </div>
     </section>
   );
