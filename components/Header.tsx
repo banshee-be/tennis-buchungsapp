@@ -249,8 +249,9 @@ export function Header({ clubName }: { clubName: string }) {
           : null}
       </div>
 
-      {authOpen ? (
-        <div aria-modal="true" className="auth-dialog-shell" role="dialog">
+      {mounted && authOpen
+        ? createPortal(
+            <div aria-modal="true" className="auth-dialog-shell" role="dialog">
           <button aria-label="Dialog schließen" className="auth-dialog-backdrop" onClick={closeAuth} type="button" />
           <div className="auth-dialog-panel">
             <div className="auth-dialog-header">
@@ -259,7 +260,7 @@ export function Header({ clubName }: { clubName: string }) {
                 <strong>TV Europabad Marbach</strong>
               </div>
               <button aria-label="Dialog schließen" onClick={closeAuth} type="button">
-                Schließen
+                ×
               </button>
             </div>
 
@@ -404,8 +405,10 @@ export function Header({ clubName }: { clubName: string }) {
               </form>
             ) : null}
           </div>
-        </div>
-      ) : null}
+        </div>,
+            document.body
+          )
+        : null}
     </header>
   );
 }
