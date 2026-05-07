@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sendAdminNewRegistrationEmail } from "@/lib/email";
 import { jsonError } from "@/lib/http";
 import { hashPassword, isValidEmail, normalizeEmail, validatePassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
@@ -40,6 +41,8 @@ export async function POST(request: NextRequest) {
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
+  const isNewRegistration = !existing;
+
   if (existing?.passwordHash) {
     return jsonError("Diese E-Mail-Adresse ist bereits registriert.", 409);
   }
@@ -73,6 +76,12 @@ export async function POST(request: NextRequest) {
       });
 
   await createSession(user);
+
+  if (isNewRegistration) {
+    sendAdminNewRegistrationEmail(user).catch((error: unknown) => {
+      console.error("Admin-Benachrichtigung zur Registrierung konnte nicht gesendet werden.", error);
+    });
+  }
 
   return NextResponse.json({
     user: toSessionUser(user),

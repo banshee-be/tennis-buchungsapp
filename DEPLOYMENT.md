@@ -260,6 +260,7 @@ Pflicht fuer Produktion:
 
 ```env
 APP_URL=https://buchung.tveuropabad-marbach.de
+NEXT_PUBLIC_APP_URL=https://buchung.tveuropabad-marbach.de
 AUTH_SECRET=ein-langer-zufaelliger-geheimer-wert
 ADMIN_EMAILS=admin@beispiel.de,vorstand@beispiel.de
 DATABASE_URL=...
@@ -291,6 +292,36 @@ Bei iFrame-Einbettung:
 ```env
 EMBEDDED_COOKIE_MODE=true
 ```
+
+## E-Mail-Versand mit Resend
+
+Die App nutzt Resend fuer:
+
+- Passwort-zuruecksetzen-E-Mails
+- Admin-Benachrichtigung bei neuer Registrierung
+
+Einrichtung:
+
+1. Resend-Account erstellen
+2. API-Key erzeugen
+3. Absenderdomain verifizieren oder einen erlaubten Absender konfigurieren
+4. In Vercel unter Settings / Environment Variables setzen:
+
+```env
+RESEND_API_KEY=re_...
+EMAIL_FROM="TV Europabad Marbach <noreply@deine-domain.de>"
+ADMIN_EMAILS=admin@beispiel.de,vorstand@beispiel.de
+NEXT_PUBLIC_APP_URL=https://buchung.tveuropabad-marbach.de
+```
+
+Danach in Vercel ein neues Deployment ausloesen.
+
+Hinweise:
+
+- `ADMIN_EMAILS` kann mehrere kommagetrennte E-Mail-Adressen enthalten.
+- Wenn `RESEND_API_KEY` oder `EMAIL_FROM` fehlen, bricht eine Registrierung nicht ab.
+- In Development wird die geplante E-Mail in der Konsole angezeigt.
+- In Production wird nur gewarnt, wenn der E-Mail-Versand nicht konfiguriert ist.
 
 ## Datenbank
 
