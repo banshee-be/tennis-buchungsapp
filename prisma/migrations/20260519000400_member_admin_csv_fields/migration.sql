@@ -1,0 +1,5 @@
+ALTER TABLE "User"
+  ADD COLUMN "phoneNumber" TEXT,
+  ADD COLUMN "isActive" BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN "adminNote" TEXT,
+  ADD COLUMN "lastLoginAt" TIMESTAMP(3);

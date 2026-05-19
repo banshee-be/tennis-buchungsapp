@@ -26,8 +26,10 @@ model User {
   id               String           @id @default(cuid())
   name             String
   email            String           @unique
+  phoneNumber      String?
   passwordHash     String?
   role             String           @default("USER")
+  isActive         Boolean          @default(true)
   membershipType   String           @default("EXTERNAL")
   membershipStatus String           @default("VERIFIED")
   memberNumber     String?
@@ -44,6 +46,8 @@ model User {
   keyIssuedAt      DateTime?
   keyReturnedAt    DateTime?
   keyNote          String?
+  adminNote        String?
+  lastLoginAt      DateTime?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   bookings         Booking[]

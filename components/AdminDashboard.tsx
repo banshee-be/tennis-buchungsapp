@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Booking = {
   id: string;
@@ -18,7 +18,9 @@ type User = {
   id: string;
   name: string;
   email: string;
+  phoneNumber?: string | null;
   role: "USER" | "ADMIN";
+  isActive: boolean;
   membershipType: "MEMBER" | "EXTERNAL";
   membershipStatus: "PENDING" | "VERIFIED" | "REJECTED";
   memberNumber?: string | null;
@@ -35,12 +37,25 @@ type User = {
   keyIssuedAt?: string | null;
   keyReturnedAt?: string | null;
   keyNote?: string | null;
+  adminNote?: string | null;
+  lastLoginAt?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
   teamPlayer?: {
     id: string;
     fullName: string;
     team?: { name: string; season?: string | null } | null;
   } | null;
   bookingCount: number;
+};
+
+type ImportPreview = {
+  rows: unknown[];
+  rowCount: number;
+  newUsers: number;
+  updateUsers: number;
+  errors: string[];
+  warnings: string[];
 };
 
 type ContractType = "FULL_MEMBER" | "FAMILY_MEMBER" | "PASSIVE_MEMBER" | "YOUTH_MEMBER" | "SEASON_CARD" | "NONE";
@@ -178,6 +193,13 @@ function contractWorkHours(user: User) {
   return user.workHoursRequired ?? contractOptions[user.contractType].workHours ?? null;
 }
 
+function membershipLabel(user: User) {
+  if (user.membershipType === "EXTERNAL") return "Gastspieler";
+  if (user.membershipStatus === "PENDING") return "Mitgliedschaft in Prüfung";
+  if (user.membershipStatus === "REJECTED") return "Abgelehnt";
+  return "Bestätigt";
+}
+
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -189,9 +211,16 @@ export function AdminDashboard() {
   const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Record<string, string>>({});
   const [nuligaSummary, setNuLigaSummary] = useState<NuLigaSummary | null>(null);
   const [nuligaImporting, setNuLigaImporting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
   const [contractFilter, setContractFilter] = useState<ContractType | "ALL">("ALL");
   const [keyFilter, setKeyFilter] = useState<KeyType | "ALL" | "WITH_KEY" | "WITHOUT_KEY">("ALL");
   const [memberFilter, setMemberFilter] = useState<"ALL" | "PENDING" | "VERIFIED_MEMBER" | "EXTERNAL" | "REJECTED">("ALL");
+  const [teamFilter, setTeamFilter] = useState<"ALL" | "NONE" | "POSSIBLE" | "LINKED" | string>("ALL");
+  const [roleFilter, setRoleFilter] = useState<"ALL" | "USER" | "ADMIN">("ALL");
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userDraft, setUserDraft] = useState<Partial<User>>({});
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
+  const [importingCsv, setImportingCsv] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [bookingForm, setBookingForm] = useState({
@@ -234,9 +263,26 @@ export function AdminDashboard() {
     setEditableSettings(settingsForm);
   }, [settingsForm]);
 
+  const possibleTeamPlayerMatch = useCallback(
+    (user: User) => {
+      const userName = normalizeMatchName(user.name);
+      const memberNumber = user.memberNumber?.trim();
+
+      return teamPlayers.find((player) => {
+        const nameMatches = normalizeMatchName(player.fullName) === userName;
+        const numberMatches = memberNumber && player.licenseNumber === memberNumber;
+        return Boolean(numberMatches || nameMatches);
+      });
+    },
+    [teamPlayers]
+  );
+
   const filteredUsers = useMemo(
     () =>
       users.filter((user) => {
+        const possibleMatch = possibleTeamPlayerMatch(user);
+        const query = normalizeMatchName(searchTerm);
+        const searchMatches = !query || normalizeMatchName(`${user.name} ${user.email}`).includes(query);
         const contractMatches = contractFilter === "ALL" || user.contractType === contractFilter;
         const keyMatches =
           keyFilter === "ALL" ||
@@ -249,10 +295,22 @@ export function AdminDashboard() {
           (memberFilter === "VERIFIED_MEMBER" && user.membershipType === "MEMBER" && user.membershipStatus === "VERIFIED") ||
           (memberFilter === "EXTERNAL" && user.membershipType === "EXTERNAL") ||
           (memberFilter === "REJECTED" && user.membershipStatus === "REJECTED");
+        const teamMatches =
+          teamFilter === "ALL" ||
+          (teamFilter === "NONE" && !user.teamPlayer) ||
+          (teamFilter === "POSSIBLE" && !user.teamPlayer && Boolean(possibleMatch)) ||
+          (teamFilter === "LINKED" && Boolean(user.teamPlayer)) ||
+          user.teamPlayer?.team?.name === teamFilter;
+        const roleMatches = roleFilter === "ALL" || user.role === roleFilter;
 
-        return contractMatches && keyMatches && memberMatches;
+        return searchMatches && contractMatches && keyMatches && memberMatches && teamMatches && roleMatches;
       }),
-    [contractFilter, keyFilter, memberFilter, users]
+    [contractFilter, keyFilter, memberFilter, possibleTeamPlayerMatch, roleFilter, searchTerm, teamFilter, users]
+  );
+
+  const availableTeamNames = useMemo(
+    () => Array.from(new Set(teamPlayers.map((player) => player.team?.name).filter(Boolean))) as string[],
+    [teamPlayers]
   );
 
   async function loadAdminData() {
@@ -387,17 +445,6 @@ export function AdminDashboard() {
     await loadAdminData();
   }
 
-  function possibleTeamPlayerMatch(user: User) {
-    const userName = normalizeMatchName(user.name);
-    const memberNumber = user.memberNumber?.trim();
-
-    return teamPlayers.find((player) => {
-      const nameMatches = normalizeMatchName(player.fullName) === userName;
-      const numberMatches = memberNumber && player.licenseNumber === memberNumber;
-      return Boolean(numberMatches || nameMatches);
-    });
-  }
-
   async function linkTeamPlayer(user: User) {
     const teamPlayerId = selectedTeamPlayers[user.id] ?? user.teamPlayer?.id ?? possibleTeamPlayerMatch(user)?.id ?? "";
     await updateUser(user, { teamPlayerId: teamPlayerId || null });
@@ -417,6 +464,64 @@ export function AdminDashboard() {
       keyType,
       hasKey: keyType !== "NONE"
     });
+  }
+
+  function openUserPanel(user: User) {
+    setEditingUser(user);
+    setUserDraft({ ...user });
+  }
+
+  function updateDraft(patch: Partial<User>) {
+    setUserDraft((current) => ({ ...current, ...patch }));
+  }
+
+  async function saveUserDraft() {
+    if (!editingUser) {
+      return;
+    }
+    await updateUser(editingUser, userDraft);
+    setEditingUser(null);
+    setUserDraft({});
+  }
+
+  async function previewCsvImport(file: File | null) {
+    if (!file) {
+      return;
+    }
+    setImportingCsv(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    const response = await fetch("/api/admin/users/import-preview", { method: "POST", body: formData });
+    const data = await response.json().catch(() => ({}));
+    setImportingCsv(false);
+
+    if (!response.ok) {
+      setMessage(data.error ?? "CSV konnte nicht gelesen werden.");
+      return;
+    }
+    setImportPreview(data);
+    setMessage(data.errors?.length ? "CSV enthält Fehler. Bitte korrigieren und erneut hochladen." : "CSV-Vorschau erstellt.");
+  }
+
+  async function confirmCsvImport() {
+    if (!importPreview || importPreview.errors.length) {
+      return;
+    }
+    const response = await fetch("/api/admin/users/import-confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: importPreview.rows })
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setMessage(data.error ?? "CSV-Import konnte nicht gespeichert werden.");
+      return;
+    }
+
+    setMessage(`CSV-Import gespeichert: ${data.created} neue Nutzer, ${data.updated} aktualisiert.`);
+    setImportPreview(null);
+    await loadAdminData();
   }
 
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
@@ -616,12 +721,15 @@ export function AdminDashboard() {
       ) : null}
 
       {activeTab === "Nutzer" ? (
-        <div className="admin-list">
-          <h2>Nutzer verwalten</h2>
+        <div className="admin-list member-admin">
+          <div className="section-heading-row">
+            <h2>Mitgliederverwaltung</h2>
+            <span>{filteredUsers.length} von {users.length} Nutzern</span>
+          </div>
           <section className="admin-import-card">
             <div>
               <p className="eyebrow">nuLiga Import</p>
-              <h3>Mannschaften und Spieler importieren</h3>
+              <h3>{nuligaSummary?.importedTeams ?? 0} Mannschaften · {nuligaSummary?.importedPlayers ?? 0} Spieler</h3>
               <p>
                 Quelle:{" "}
                 <a href={nuligaSummary?.sourceUrl ?? "#"} target="_blank" rel="noreferrer">
@@ -634,19 +742,16 @@ export function AdminDashboard() {
               </small>
             </div>
             <button className="button primary" disabled={nuligaImporting} onClick={importNuLigaData} type="button">
-              {nuligaImporting ? "Import läuft..." : "nuLiga-Daten importieren"}
+              {nuligaImporting ? "Import läuft..." : nuligaSummary?.lastImportedAt ? "Import aktualisieren" : "nuLiga-Daten importieren"}
             </button>
           </section>
 
           {nuligaSummary ? (
             <div className="nuliga-summary">
-              <strong>
-                {nuligaSummary.importedTeams} Mannschaften · {nuligaSummary.importedPlayers} Spieler
-              </strong>
               <div className="team-summary-grid">
                 {nuligaSummary.teams.map((team) => (
                   <span key={`${team.name}-${team.season ?? ""}`}>
-                    {team.name}: {team.playerCount} Spieler{team.captainCount ? `, ${team.captainCount} Mannschaftsführer` : ""}
+                    {team.name}: {team.playerCount} Spieler{team.captainCount ? `, ${team.captainCount} MF` : ""}
                   </span>
                 ))}
               </div>
@@ -654,7 +759,52 @@ export function AdminDashboard() {
             </div>
           ) : null}
 
+          <div className="admin-actions-bar">
+            <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/export"; }} type="button">
+              Mitglieder exportieren
+            </button>
+            <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/import-template"; }} type="button">
+              CSV-Vorlage herunterladen
+            </button>
+            <label className="ghost-button file-button">
+              Mitglieder importieren
+              <input accept=".csv,text/csv" type="file" onChange={(event) => void previewCsvImport(event.target.files?.[0] ?? null)} />
+            </label>
+          </div>
+
+          {importPreview ? (
+            <div className="csv-preview">
+              <strong>
+                CSV-Vorschau: {importPreview.rowCount} Zeilen · {importPreview.newUsers} neu · {importPreview.updateUsers} aktualisieren
+              </strong>
+              {importPreview.errors.length ? <p className="form-error">{importPreview.errors.join(" ")}</p> : null}
+              {importPreview.warnings.length ? <small>{importPreview.warnings.join(" ")}</small> : null}
+              <div className="row-actions">
+                <button className="button primary" disabled={Boolean(importPreview.errors.length) || importingCsv} onClick={confirmCsvImport} type="button">
+                  Import bestätigen
+                </button>
+                <button className="ghost-button" onClick={() => setImportPreview(null)} type="button">
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <div className="admin-filter-bar">
+            <label>
+              Suche
+              <input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Name oder E-Mail" />
+            </label>
+            <label>
+              Mitgliedsstatus
+              <select value={memberFilter} onChange={(event) => setMemberFilter(event.target.value as typeof memberFilter)}>
+                <option value="ALL">Alle</option>
+                <option value="PENDING">Mitgliedschaft in Prüfung</option>
+                <option value="VERIFIED_MEMBER">Bestätigt</option>
+                <option value="EXTERNAL">Gastspieler</option>
+                <option value="REJECTED">Abgelehnt</option>
+              </select>
+            </label>
             <label>
               Vertragsstatus
               <select value={contractFilter} onChange={(event) => setContractFilter(event.target.value as ContractType | "ALL")}>
@@ -677,207 +827,81 @@ export function AdminDashboard() {
               </select>
             </label>
             <label>
-              Mitgliedsstatus
-              <select value={memberFilter} onChange={(event) => setMemberFilter(event.target.value as typeof memberFilter)}>
+              Mannschaft
+              <select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}>
                 <option value="ALL">Alle</option>
-                <option value="PENDING">Mitgliedschaft in Prüfung</option>
-                <option value="VERIFIED_MEMBER">Bestätigte Mitglieder</option>
-                <option value="EXTERNAL">Gastspieler</option>
-                <option value="REJECTED">Abgelehnte</option>
+                <option value="NONE">Ohne Mannschaft</option>
+                <option value="POSSIBLE">Möglicher nuLiga-Treffer</option>
+                <option value="LINKED">Verknüpft</option>
+                {availableTeamNames.map((teamName) => (
+                  <option value={teamName} key={teamName}>
+                    {teamName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Rolle
+              <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as typeof roleFilter)}>
+                <option value="ALL">Alle</option>
+                <option value="USER">Nutzer</option>
+                <option value="ADMIN">Admin</option>
               </select>
             </label>
           </div>
 
-          {filteredUsers.map((user) => {
-            const possibleMatch = possibleTeamPlayerMatch(user);
-            const selectedTeamPlayerId = selectedTeamPlayers[user.id] ?? user.teamPlayer?.id ?? possibleMatch?.id ?? "";
-            const contract = contractOptions[user.contractType];
-            const fee = contractFee(user);
-            const requiredHours = contractWorkHours(user);
+          <div className="member-table">
+            <div className="member-table-head">
+              <span>Name</span>
+              <span>Status</span>
+              <span>Vertrag</span>
+              <span>Schlüssel</span>
+              <span>Mannschaft</span>
+              <span>Buchungen</span>
+              <span>Aktionen</span>
+            </div>
+            {filteredUsers.map((user) => {
+              const possibleMatch = possibleTeamPlayerMatch(user);
+              const contract = contractOptions[user.contractType];
+              const requiredHours = contractWorkHours(user);
+              const teamText = user.teamPlayer?.team?.name ?? (possibleMatch ? "Möglicher nuLiga-Treffer" : "Ohne Mannschaft");
 
-            return (
-              <article className="admin-row" key={user.id}>
-                <div>
-                  <strong>{user.name}</strong>
-                  <p>{user.email}</p>
-                  <small>
-                    {user.bookingCount} Buchungen · {user.membershipType === "MEMBER" ? "Mitglied" : "Gastspieler"} ·{" "}
-                    {user.membershipStatus === "PENDING"
-                      ? "Prüfung offen"
-                      : user.membershipStatus === "REJECTED"
-                        ? "Abgelehnt"
-                        : "Bestätigt"}
-                    {user.memberNumber ? ` · Nr. ${user.memberNumber}` : ""}
-                  </small>
-                  <small className="stacked-note">
-                    Mannschaftszuordnung:{" "}
-                    {user.teamPlayer ? `${user.teamPlayer.fullName} · ${user.teamPlayer.team?.name ?? "nuLiga"}` : "keine"}
-                  </small>
-                  {!user.teamPlayer && possibleMatch ? (
-                    <small className="match-note">
-                      Möglicher nuLiga-Treffer: {possibleMatch.fullName} · {possibleMatch.team?.name}
-                    </small>
-                  ) : null}
-                  <div className="member-meta-grid">
-                    <span className={`contract-badge contract-${user.contractType.toLowerCase().replaceAll("_", "-")}`}>
-                      {contract.shortLabel}
-                    </span>
-                    <small>
-                      Vertragsstatus: {contract.label} · {euroLabel(fee)}
-                      {requiredHours ? ` · ${requiredHours} Arbeitsstunden` : ""}
-                      {user.workHoursDone ? ` · ${user.workHoursDone} erledigt` : ""}
-                    </small>
-                    {contract.hint ? <small>{contract.hint}</small> : null}
-                    <small>Schlüssel: {keyOptions[user.keyType]}</small>
-                    {(user.contractStartDate || user.contractEndDate || user.keyIssuedAt || user.keyReturnedAt) && (
-                      <small>
-                        Vertrag: {dateInputValue(user.contractStartDate) || "offen"} bis {dateInputValue(user.contractEndDate) || "offen"} · Schlüssel:
-                        {" "}
-                        {dateInputValue(user.keyIssuedAt) || "nicht ausgegeben"} bis {dateInputValue(user.keyReturnedAt) || "nicht zurückgegeben"}
-                      </small>
-                    )}
+              return (
+                <article className="member-table-row" key={user.id}>
+                  <div>
+                    <strong>{user.name}</strong>
+                    <small>{user.email}</small>
                   </div>
-                </div>
-                <div className="row-actions member-actions">
-                  <select
-                    value={user.membershipType}
-                    onChange={(event) => updateUser(user, { membershipType: event.target.value as User["membershipType"] })}
-                  >
-                    <option value="MEMBER">Mitglied</option>
-                    <option value="EXTERNAL">Gastspieler</option>
-                  </select>
-                  <select
-                    value={user.membershipStatus}
-                    onChange={(event) => updateUser(user, { membershipStatus: event.target.value as User["membershipStatus"] })}
-                  >
-                    <option value="PENDING">Prüfung offen</option>
-                    <option value="VERIFIED">Bestätigt</option>
-                    <option value="REJECTED">Abgelehnt</option>
-                  </select>
-                  <select value={user.role} onChange={(event) => updateUser(user, { role: event.target.value as User["role"] })}>
-                    <option value="USER">Nutzer</option>
-                    <option value="ADMIN">Admin</option>
-                  </select>
-                  <select value={user.contractType} onChange={(event) => updateContractType(user, event.target.value as ContractType)}>
-                    {Object.entries(contractOptions).map(([value, option]) => (
-                      <option value={value} key={value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    aria-label="Vertragsbeginn"
-                    type="date"
-                    value={dateInputValue(user.contractStartDate)}
-                    onChange={(event) => updateUser(user, { contractStartDate: event.target.value || null })}
-                  />
-                  <input
-                    aria-label="Vertragsende"
-                    type="date"
-                    value={dateInputValue(user.contractEndDate)}
-                    onChange={(event) => updateUser(user, { contractEndDate: event.target.value || null })}
-                  />
-                  <input
-                    aria-label="Arbeitsstunden erforderlich"
-                    inputMode="numeric"
-                    min="0"
-                    placeholder="Std. Pflicht"
-                    type="number"
-                    value={user.workHoursRequired ?? ""}
-                    onChange={(event) => updateUser(user, { workHoursRequired: event.target.value ? Number(event.target.value) : null })}
-                  />
-                  <input
-                    aria-label="Arbeitsstunden erledigt"
-                    inputMode="numeric"
-                    min="0"
-                    placeholder="Std. erledigt"
-                    type="number"
-                    value={user.workHoursDone ?? 0}
-                    onChange={(event) => updateUser(user, { workHoursDone: Number(event.target.value) })}
-                  />
-                  <button
-                    className="ghost-button"
-                    onClick={() => {
-                      const note = window.prompt("Vertragsnotiz", user.contractNote ?? "");
-                      if (note !== null) {
-                        void updateUser(user, { contractNote: note || null });
-                      }
-                    }}
-                    type="button"
-                  >
-                    Vertragsnotiz
-                  </button>
-                  <select value={user.keyType} onChange={(event) => updateKeyType(user, event.target.value as KeyType)}>
-                    {Object.entries(keyOptions).map(([value, label]) => (
-                      <option value={value} key={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    aria-label="Schlüssel-Ausgabedatum"
-                    type="date"
-                    value={dateInputValue(user.keyIssuedAt)}
-                    onChange={(event) => updateUser(user, { keyIssuedAt: event.target.value || null })}
-                  />
-                  <input
-                    aria-label="Schlüssel-Rückgabedatum"
-                    type="date"
-                    value={dateInputValue(user.keyReturnedAt)}
-                    onChange={(event) => updateUser(user, { keyReturnedAt: event.target.value || null })}
-                  />
-                  <button
-                    className="ghost-button"
-                    onClick={() => {
-                      const note = window.prompt("Schlüsselnotiz", user.keyNote ?? "");
-                      if (note !== null) {
-                        void updateUser(user, { keyNote: note || null });
-                      }
-                    }}
-                    type="button"
-                  >
-                    Schlüsselnotiz
-                  </button>
-                  <select
-                    aria-label="nuLiga-Spieler auswählen"
-                    value={selectedTeamPlayerId}
-                    onChange={(event) => setSelectedTeamPlayers((current) => ({ ...current, [user.id]: event.target.value }))}
-                  >
-                    <option value="">Kein nuLiga-Spieler</option>
-                    {teamPlayers.map((player) => (
-                      <option value={player.id} key={player.id}>
-                        {player.fullName} · {player.team?.name ?? "nuLiga"}
-                      </option>
-                    ))}
-                  </select>
-                  <button className="ghost-button" onClick={() => linkTeamPlayer(user)} type="button">
-                    Mit nuLiga-Spieler verknüpfen
-                  </button>
-                  <button
-                    className="ghost-button"
-                    onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "VERIFIED" })}
-                    type="button"
-                  >
-                    Als Mitglied bestätigen
-                  </button>
-                  <button
-                    className="ghost-button danger"
-                    onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "REJECTED" })}
-                    type="button"
-                  >
-                    Ablehnen
-                  </button>
-                  <button
-                    className="ghost-button"
-                    onClick={() => updateUser(user, { membershipType: "EXTERNAL", membershipStatus: "VERIFIED", memberNumber: null })}
-                    type="button"
-                  >
-                    Gastspieler
-                  </button>
-                </div>
-              </article>
-            );
-          })}
+                  <span className={`status-badge ${user.membershipStatus.toLowerCase()} ${user.membershipType.toLowerCase()}`}>
+                    {membershipLabel(user)}
+                  </span>
+                  <span className={`status-badge contract-${user.contractType.toLowerCase().replaceAll("_", "-")}`}>
+                    {contract.shortLabel} · {euroLabel(contractFee(user))}
+                    {requiredHours ? ` · ${requiredHours} Arbeitsstunden` : ""}
+                  </span>
+                  <span className={`status-badge ${user.hasKey ? "linked" : "neutral"}`}>{keyOptions[user.keyType]}</span>
+                  <span className={`status-badge ${user.teamPlayer ? "linked" : possibleMatch ? "pending" : "neutral"}`}>
+                    {teamText}
+                    {user.teamPlayer && possibleMatch?.isCaptain ? " · Mannschaftsführer" : ""}
+                  </span>
+                  <span>{user.bookingCount} Buchungen</span>
+                  <div className="compact-actions">
+                    {user.membershipStatus === "PENDING" && user.membershipType === "MEMBER" ? (
+                      <button className="ghost-button" onClick={() => updateUser(user, { membershipStatus: "VERIFIED" })} type="button">
+                        Bestätigen
+                      </button>
+                    ) : null}
+                    <button className="ghost-button" onClick={() => openUserPanel(user)} type="button">
+                      Details
+                    </button>
+                    <button className="button primary" onClick={() => openUserPanel(user)} type="button">
+                      Bearbeiten
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </div>
       ) : null}
 
@@ -1086,6 +1110,252 @@ export function AdminDashboard() {
                 </button>
               </article>
             ))}
+          </div>
+        </div>
+      ) : null}
+
+      {editingUser ? (
+        <div className="admin-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="member-detail-panel">
+            <div className="detail-panel-header">
+              <div>
+                <p className="eyebrow">Mitglied bearbeiten</p>
+                <h2>{editingUser.name}</h2>
+                <small>{editingUser.email}</small>
+              </div>
+              <button className="ghost-button" onClick={() => setEditingUser(null)} type="button">
+                Schließen
+              </button>
+            </div>
+
+            <section className="detail-section">
+              <h3>Stammdaten</h3>
+              <div className="form-row">
+                <label>
+                  Name
+                  <input value={userDraft.name ?? ""} onChange={(event) => updateDraft({ name: event.target.value })} />
+                </label>
+                <label>
+                  E-Mail
+                  <input value={userDraft.email ?? ""} disabled />
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  Telefonnummer
+                  <input value={userDraft.phoneNumber ?? ""} onChange={(event) => updateDraft({ phoneNumber: event.target.value || null })} />
+                </label>
+                <label>
+                  Mitgliedsnummer
+                  <input value={userDraft.memberNumber ?? ""} onChange={(event) => updateDraft({ memberNumber: event.target.value || null })} />
+                </label>
+              </div>
+              <small>
+                Registriert: {editingUser.createdAt ? formatDateTimeLocal(editingUser.createdAt) : "unbekannt"} · Letzter Login:{" "}
+                {formatDateTimeLocal(editingUser.lastLoginAt)}
+              </small>
+            </section>
+
+            <section className="detail-section">
+              <h3>Mitgliedsstatus</h3>
+              <div className="form-row">
+                <label>
+                  Kontotyp
+                  <select value={userDraft.membershipType} onChange={(event) => updateDraft({ membershipType: event.target.value as User["membershipType"] })}>
+                    <option value="MEMBER">Mitglied</option>
+                    <option value="EXTERNAL">Gastspieler</option>
+                  </select>
+                </label>
+                <label>
+                  Mitgliedsstatus
+                  <select
+                    value={userDraft.membershipStatus}
+                    onChange={(event) => updateDraft({ membershipStatus: event.target.value as User["membershipStatus"] })}
+                  >
+                    <option value="PENDING">Mitgliedschaft in Prüfung</option>
+                    <option value="VERIFIED">Bestätigt</option>
+                    <option value="REJECTED">Abgelehnt</option>
+                  </select>
+                </label>
+                <label>
+                  Rolle
+                  <select value={userDraft.role} onChange={(event) => updateDraft({ role: event.target.value as User["role"] })}>
+                    <option value="USER">Nutzer</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </label>
+              </div>
+              <label className="toggle-line">
+                <input checked={userDraft.isActive ?? true} onChange={(event) => updateDraft({ isActive: event.target.checked })} type="checkbox" />
+                Aktiv
+              </label>
+            </section>
+
+            <section className="detail-section">
+              <h3>Vertragsstatus</h3>
+              <div className="form-row">
+                <label>
+                  Vertragsstatus
+                  <select
+                    value={userDraft.contractType}
+                    onChange={(event) => {
+                      const contractType = event.target.value as ContractType;
+                      updateDraft({
+                        contractType,
+                        annualFeeCents: contractOptions[contractType].feeCents,
+                        workHoursRequired: contractOptions[contractType].workHours ?? null
+                      });
+                    }}
+                  >
+                    {Object.entries(contractOptions).map(([value, option]) => (
+                      <option value={value} key={value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Vertragsbeginn
+                  <input
+                    type="date"
+                    value={dateInputValue(userDraft.contractStartDate)}
+                    onChange={(event) => updateDraft({ contractStartDate: event.target.value || null })}
+                  />
+                </label>
+                <label>
+                  Vertragsende
+                  <input
+                    type="date"
+                    value={dateInputValue(userDraft.contractEndDate)}
+                    onChange={(event) => updateDraft({ contractEndDate: event.target.value || null })}
+                  />
+                </label>
+              </div>
+              <div className="form-row">
+                <label>
+                  Arbeitsstunden erforderlich
+                  <input
+                    min="0"
+                    type="number"
+                    value={userDraft.workHoursRequired ?? ""}
+                    onChange={(event) => updateDraft({ workHoursRequired: event.target.value ? Number(event.target.value) : null })}
+                  />
+                </label>
+                <label>
+                  Arbeitsstunden erledigt
+                  <input
+                    min="0"
+                    type="number"
+                    value={userDraft.workHoursDone ?? 0}
+                    onChange={(event) => updateDraft({ workHoursDone: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+              <small>
+                Beitrag: {euroLabel(userDraft.annualFeeCents ?? contractOptions[userDraft.contractType ?? "NONE"].feeCents)}
+                {contractOptions[userDraft.contractType ?? "NONE"].hint ? ` · ${contractOptions[userDraft.contractType ?? "NONE"].hint}` : ""}
+              </small>
+              <label>
+                Vertragsnotiz
+                <textarea value={userDraft.contractNote ?? ""} onChange={(event) => updateDraft({ contractNote: event.target.value || null })} />
+              </label>
+            </section>
+
+            <section className="detail-section">
+              <h3>Schlüssel</h3>
+              <div className="form-row">
+                <label>
+                  Schlüsselart
+                  <select value={userDraft.keyType} onChange={(event) => updateDraft({ keyType: event.target.value as KeyType, hasKey: event.target.value !== "NONE" })}>
+                    {Object.entries(keyOptions).map(([value, label]) => (
+                      <option value={value} key={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Ausgabedatum
+                  <input type="date" value={dateInputValue(userDraft.keyIssuedAt)} onChange={(event) => updateDraft({ keyIssuedAt: event.target.value || null })} />
+                </label>
+                <label>
+                  Rückgabedatum
+                  <input type="date" value={dateInputValue(userDraft.keyReturnedAt)} onChange={(event) => updateDraft({ keyReturnedAt: event.target.value || null })} />
+                </label>
+              </div>
+              <label>
+                Schlüsselnotiz
+                <textarea value={userDraft.keyNote ?? ""} onChange={(event) => updateDraft({ keyNote: event.target.value || null })} />
+              </label>
+            </section>
+
+            <section className="detail-section">
+              <h3>nuLiga / Mannschaft</h3>
+              {possibleTeamPlayerMatch(editingUser) ? (
+                <small>
+                  Möglicher nuLiga-Treffer: {possibleTeamPlayerMatch(editingUser)?.fullName} · {possibleTeamPlayerMatch(editingUser)?.team?.name}
+                </small>
+              ) : null}
+              <label>
+                Verknüpfter nuLiga-Spieler
+                <select value={userDraft.teamPlayerId ?? editingUser.teamPlayer?.id ?? ""} onChange={(event) => updateDraft({ teamPlayerId: event.target.value || null })}>
+                  <option value="">Keine Verknüpfung</option>
+                  {teamPlayers.map((player) => (
+                    <option value={player.id} key={player.id}>
+                      {player.fullName} · {player.team?.name ?? "nuLiga"}{player.isCaptain ? " · Mannschaftsführer" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="row-actions">
+                <button className="ghost-button" onClick={() => updateDraft({ teamPlayerId: possibleTeamPlayerMatch(editingUser)?.id ?? null })} type="button">
+                  Mit nuLiga-Spieler verknüpfen
+                </button>
+                <button className="ghost-button danger" onClick={() => updateDraft({ teamPlayerId: null })} type="button">
+                  Verknüpfung lösen
+                </button>
+                <button className="ghost-button" onClick={() => updateDraft({ membershipType: "MEMBER", membershipStatus: "VERIFIED" })} type="button">
+                  Als Mitglied bestätigen
+                </button>
+              </div>
+            </section>
+
+            <section className="detail-section">
+              <h3>Buchungen</h3>
+              <p>{editingUser.bookingCount} Buchungen insgesamt.</p>
+            </section>
+
+            <section className="detail-section">
+              <h3>Adminnotiz</h3>
+              <textarea value={userDraft.adminNote ?? ""} onChange={(event) => updateDraft({ adminNote: event.target.value || null })} />
+            </section>
+
+            <div className="detail-panel-actions">
+              <button className="button primary" onClick={saveUserDraft} type="button">
+                Speichern
+              </button>
+              <button className="ghost-button" onClick={() => setEditingUser(null)} type="button">
+                Abbrechen
+              </button>
+              <button
+                className="ghost-button danger"
+                onClick={() => {
+                  if (window.confirm("Mitglied wirklich ablehnen?")) {
+                    updateDraft({ membershipType: "MEMBER", membershipStatus: "REJECTED" });
+                  }
+                }}
+                type="button"
+              >
+                Mitglied ablehnen
+              </button>
+              <button
+                className="ghost-button"
+                onClick={() => updateDraft({ membershipType: "EXTERNAL", membershipStatus: "VERIFIED", memberNumber: null })}
+                type="button"
+              >
+                Als Gastspieler markieren
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

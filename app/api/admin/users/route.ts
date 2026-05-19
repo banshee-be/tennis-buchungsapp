@@ -12,7 +12,9 @@ export async function GET() {
         id: true,
         name: true,
         email: true,
+        phoneNumber: true,
         role: true,
+        isActive: true,
         membershipType: true,
         membershipStatus: true,
         memberNumber: true,
@@ -28,6 +30,8 @@ export async function GET() {
         keyIssuedAt: true,
         keyReturnedAt: true,
         keyNote: true,
+        adminNote: true,
+        lastLoginAt: true,
         createdAt: true,
         updatedAt: true,
         teamPlayer: {
@@ -71,6 +75,7 @@ export async function GET() {
         contractEndDate: user.contractEndDate?.toISOString() ?? null,
         keyIssuedAt: user.keyIssuedAt?.toISOString() ?? null,
         keyReturnedAt: user.keyReturnedAt?.toISOString() ?? null,
+        lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
         bookings: undefined

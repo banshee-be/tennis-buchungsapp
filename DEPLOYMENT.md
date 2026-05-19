@@ -467,6 +467,23 @@ Datenschutz-Hinweise:
 - Es werden keine Bankdaten, IBANs, SEPA-Mandate oder Zahlungsdaten aus dem Aufnahmeantrag gespeichert.
 - Der Verein sollte die Speicherung und Aufbewahrungsfristen dieser Verwaltungsdaten datenschutzrechtlich prüfen.
 
+## CSV-Import und CSV-Export
+
+Der Adminbereich bietet CSV-Funktionen für die Mitgliederverwaltung:
+
+- Mitglieder exportieren
+- CSV-Vorlage herunterladen
+- Mitglieder importieren mit Vorschau und Bestätigung
+
+Sicherheits- und Datenschutzregeln:
+
+- CSV-Import und CSV-Export sind nur für Admins verfügbar.
+- CSV-Dateien werden serverseitig geparst, aber nicht dauerhaft gespeichert.
+- Der Export enthält personenbezogene Verwaltungsdaten und muss vertraulich behandelt werden.
+- Nicht exportiert werden Passwort-Hashes, Reset-Tokens, Sessions, technische Secrets, Stripe-Daten, Bankdaten, SEPA-Daten, IBAN oder BIC.
+- Neue per CSV importierte Nutzer erhalten kein Passwort. Sie können später über „Passwort vergessen“ ein Passwort setzen.
+- Adminrechte aus CSV werden nicht automatisch übernommen; Adminrechte sollten manuell vergeben werden.
+
 ## Production-Check vom 2026-05-03
 
 Ausgefuehrt:

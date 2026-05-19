@@ -19,13 +19,14 @@ function optionalDate(value: string | null | undefined) {
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await context.params;
     const body = (await request.json().catch(() => null)) as
       | {
           membershipType?: "MEMBER" | "EXTERNAL";
           membershipStatus?: "PENDING" | "VERIFIED" | "REJECTED";
           memberNumber?: string | null;
+          phoneNumber?: string | null;
           teamPlayerId?: string | null;
           contractType?: (typeof contractTypes)[number];
           contractStartDate?: string | null;
@@ -39,6 +40,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           keyIssuedAt?: string | null;
           keyReturnedAt?: string | null;
           keyNote?: string | null;
+          adminNote?: string | null;
+          isActive?: boolean;
           role?: "USER" | "ADMIN";
           name?: string;
         }
@@ -52,11 +55,28 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     const memberNumber = body.membershipType === "EXTERNAL" ? null : body.memberNumber;
     const keyType = body.keyType && keyTypes.includes(body.keyType) ? body.keyType : undefined;
     const hasKey = keyType === "NONE" ? false : keyType ? true : body.hasKey;
+    const existing = await prisma.user.findUnique({ where: { id }, select: { role: true } });
+
+    if (!existing) {
+      return jsonError("Nutzer wurde nicht gefunden.", 404);
+    }
+
+    if (id === admin.id && body.role === "USER") {
+      return jsonError("Du kannst dir nicht selbst die Adminrechte entziehen.");
+    }
+
+    if (existing.role === "ADMIN" && body.role === "USER") {
+      const adminCount = await prisma.user.count({ where: { role: "ADMIN" } });
+      if (adminCount <= 1) {
+        return jsonError("Mindestens ein Admin muss erhalten bleiben.");
+      }
+    }
 
     const user = await prisma.user.update({
       where: { id },
       data: {
         name: body.name?.trim() || undefined,
+        phoneNumber: body.phoneNumber === null ? null : body.phoneNumber?.trim() || undefined,
         membershipType: body.membershipType,
         membershipStatus,
         memberNumber: memberNumber === null ? null : memberNumber?.trim() || undefined,
@@ -73,6 +93,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         keyIssuedAt: optionalDate(body.keyIssuedAt),
         keyReturnedAt: optionalDate(body.keyReturnedAt),
         keyNote: body.keyNote === null ? null : body.keyNote?.trim() || undefined,
+        adminNote: body.adminNote === null ? null : body.adminNote?.trim() || undefined,
+        isActive: body.isActive,
         role: body.role
       }
     });
