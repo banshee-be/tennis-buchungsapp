@@ -6,7 +6,11 @@ export async function getSettings() {
     update: {},
     create: {
       id: "default",
-      maxBookingDurationMinutes: 480
+      maxBookingDurationMinutes: 120,
+      cancellationDeadlineHours: 2,
+      maxActiveBookingsPerUser: 3,
+      maxAdvanceBookingDaysMember: 7,
+      maxAdvanceBookingDaysGuest: 3
     }
   });
 }

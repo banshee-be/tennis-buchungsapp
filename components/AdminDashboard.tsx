@@ -22,7 +22,57 @@ type User = {
   membershipType: "MEMBER" | "EXTERNAL";
   membershipStatus: "PENDING" | "VERIFIED" | "REJECTED";
   memberNumber?: string | null;
+  teamPlayerId?: string | null;
+  contractType: ContractType;
+  contractStartDate?: string | null;
+  contractEndDate?: string | null;
+  annualFeeCents?: number | null;
+  workHoursRequired?: number | null;
+  workHoursDone: number;
+  contractNote?: string | null;
+  hasKey: boolean;
+  keyType: KeyType;
+  keyIssuedAt?: string | null;
+  keyReturnedAt?: string | null;
+  keyNote?: string | null;
+  teamPlayer?: {
+    id: string;
+    fullName: string;
+    team?: { name: string; season?: string | null } | null;
+  } | null;
   bookingCount: number;
+};
+
+type ContractType = "FULL_MEMBER" | "FAMILY_MEMBER" | "PASSIVE_MEMBER" | "YOUTH_MEMBER" | "SEASON_CARD" | "NONE";
+type KeyType = "NONE" | "MAIN_CHANGING_COURTS" | "MAIN_CHANGING_COURTS_CLUBROOM";
+
+type TeamPlayerOption = {
+  id: string;
+  fullName: string;
+  firstName: string;
+  lastName: string;
+  birthYear?: number | null;
+  licenseNumber?: string | null;
+  isCaptain: boolean;
+  rank?: number | null;
+  team?: { name: string; season?: string | null } | null;
+};
+
+type NuLigaSummary = {
+  sourceUrl: string;
+  season?: string | null;
+  lastImportedAt?: string | null;
+  importedTeams: number;
+  importedPlayers: number;
+  warnings: string[];
+  teams: {
+    id?: string;
+    name: string;
+    season?: string | null;
+    playerCount: number;
+    captainCount: number;
+    lastImportedAt?: string | null;
+  }[];
 };
 
 type Court = {
@@ -38,6 +88,10 @@ type Settings = {
   closingHour: number;
   slotDurationMinutes: number;
   maxBookingDurationMinutes: number;
+  cancellationDeadlineHours: number;
+  maxActiveBookingsPerUser: number;
+  maxAdvanceBookingDaysMember: number;
+  maxAdvanceBookingDaysGuest: number;
   cancellationRules: string;
 };
 
@@ -50,8 +104,23 @@ type Block = {
   court?: Court;
 };
 
-const tabs = ["Buchungen", "Nutzer", "Preise & Zeiten", "Plaetze & Sperren"] as const;
+const tabs = ["Buchungen", "Nutzer", "Preise & Zeiten", "Plätze & Sperren"] as const;
 type Tab = (typeof tabs)[number];
+
+const contractOptions: Record<ContractType, { label: string; shortLabel: string; feeCents: number | null; workHours?: number; hint?: string }> = {
+  FULL_MEMBER: { label: "Vollmitglied", shortLabel: "Vollmitglied", feeCents: 12000, workHours: 6 },
+  FAMILY_MEMBER: { label: "Familienmitglied", shortLabel: "Familienmitglied", feeCents: 6000 },
+  PASSIVE_MEMBER: { label: "Passivmitglied", shortLabel: "Passivmitglied", feeCents: 2500 },
+  YOUTH_MEMBER: { label: "Jugend bis 18 Jahre", shortLabel: "Jugend", feeCents: 5000 },
+  SEASON_CARD: { label: "Saisonkarte", shortLabel: "Saisonkarte", feeCents: 9500, hint: "nur für 1 Jahr möglich" },
+  NONE: { label: "Noch nicht festgelegt", shortLabel: "Nicht festgelegt", feeCents: null }
+};
+
+const keyOptions: Record<KeyType, string> = {
+  NONE: "Kein Schlüssel",
+  MAIN_CHANGING_COURTS: "Haupttür / Umkleide / Plätze",
+  MAIN_CHANGING_COURTS_CLUBROOM: "Haupttür / Umkleide / Plätze & Gastraum"
+};
 
 function today() {
   const date = new Date();
@@ -67,9 +136,46 @@ function centsFromEuro(value: string) {
   return Math.round(Number(value.replace(",", ".")) * 100);
 }
 
+function euroLabel(cents?: number | null) {
+  if (cents === null || cents === undefined) {
+    return "kein Beitrag";
+  }
+
+  return `${(cents / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 })} €`;
+}
+
+function dateInputValue(value?: string | null) {
+  return value ? value.slice(0, 10) : "";
+}
+
 function formatDateTime(startTime: string, endTime: string) {
   const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeZone: "UTC" }).format(new Date(startTime));
   return `${date}, ${startTime.slice(11, 16)} bis ${endTime.slice(11, 16)} Uhr`;
+}
+
+function formatDateTimeLocal(value?: string | null) {
+  if (!value) {
+    return "Noch kein Import";
+  }
+
+  return new Intl.DateTimeFormat("de-DE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function normalizeMatchName(value: string) {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function contractFee(user: User) {
+  return user.annualFeeCents ?? contractOptions[user.contractType].feeCents;
+}
+
+function contractWorkHours(user: User) {
+  return user.workHoursRequired ?? contractOptions[user.contractType].workHours ?? null;
 }
 
 export function AdminDashboard() {
@@ -79,6 +185,13 @@ export function AdminDashboard() {
   const [courts, setCourts] = useState<Court[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [teamPlayers, setTeamPlayers] = useState<TeamPlayerOption[]>([]);
+  const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Record<string, string>>({});
+  const [nuligaSummary, setNuLigaSummary] = useState<NuLigaSummary | null>(null);
+  const [nuligaImporting, setNuLigaImporting] = useState(false);
+  const [contractFilter, setContractFilter] = useState<ContractType | "ALL">("ALL");
+  const [keyFilter, setKeyFilter] = useState<KeyType | "ALL" | "WITH_KEY" | "WITHOUT_KEY">("ALL");
+  const [memberFilter, setMemberFilter] = useState<"ALL" | "PENDING" | "VERIFIED_MEMBER" | "EXTERNAL" | "REJECTED">("ALL");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [bookingForm, setBookingForm] = useState({
@@ -106,7 +219,11 @@ export function AdminDashboard() {
       openingHour: String(settings?.openingHour ?? 8),
       closingHour: String(settings?.closingHour ?? 21),
       slotDurationMinutes: String(settings?.slotDurationMinutes ?? 30),
-      maxBookingDurationMinutes: String(settings?.maxBookingDurationMinutes ?? 480),
+      maxBookingDurationMinutes: String(settings?.maxBookingDurationMinutes ?? 120),
+      cancellationDeadlineHours: String(settings?.cancellationDeadlineHours ?? 2),
+      maxActiveBookingsPerUser: String(settings?.maxActiveBookingsPerUser ?? 3),
+      maxAdvanceBookingDaysMember: String(settings?.maxAdvanceBookingDaysMember ?? 7),
+      maxAdvanceBookingDaysGuest: String(settings?.maxAdvanceBookingDaysGuest ?? 3),
       cancellationRules: settings?.cancellationRules ?? ""
     }),
     [settings]
@@ -117,6 +234,27 @@ export function AdminDashboard() {
     setEditableSettings(settingsForm);
   }, [settingsForm]);
 
+  const filteredUsers = useMemo(
+    () =>
+      users.filter((user) => {
+        const contractMatches = contractFilter === "ALL" || user.contractType === contractFilter;
+        const keyMatches =
+          keyFilter === "ALL" ||
+          (keyFilter === "WITH_KEY" && user.hasKey) ||
+          (keyFilter === "WITHOUT_KEY" && !user.hasKey) ||
+          user.keyType === keyFilter;
+        const memberMatches =
+          memberFilter === "ALL" ||
+          (memberFilter === "PENDING" && user.membershipStatus === "PENDING") ||
+          (memberFilter === "VERIFIED_MEMBER" && user.membershipType === "MEMBER" && user.membershipStatus === "VERIFIED") ||
+          (memberFilter === "EXTERNAL" && user.membershipType === "EXTERNAL") ||
+          (memberFilter === "REJECTED" && user.membershipStatus === "REJECTED");
+
+        return contractMatches && keyMatches && memberMatches;
+      }),
+    [contractFilter, keyFilter, memberFilter, users]
+  );
+
   async function loadAdminData() {
     setLoading(true);
     setMessage("");
@@ -125,9 +263,10 @@ export function AdminDashboard() {
       fetch("/api/admin/users", { cache: "no-store" }),
       fetch("/api/admin/courts", { cache: "no-store" }),
       fetch("/api/admin/blocks", { cache: "no-store" }),
-      fetch("/api/admin/settings", { cache: "no-store" })
+      fetch("/api/admin/settings", { cache: "no-store" }),
+      fetch("/api/admin/nuliga/import", { cache: "no-store" })
     ];
-    const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse] = await Promise.all(endpoints);
+    const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse, nuligaResponse] = await Promise.all(endpoints);
 
     if (!bookingsResponse.ok) {
       const data = await bookingsResponse.json().catch(() => ({}));
@@ -146,9 +285,11 @@ export function AdminDashboard() {
 
     setBookings(bookingsData.bookings);
     setUsers(usersData.users);
+    setTeamPlayers(usersData.teamPlayers ?? []);
     setCourts(courtsData.courts);
     setBlocks(blocksData.blocks);
     setSettings(settingsData.settings);
+    setNuLigaSummary(nuligaResponse.ok ? await nuligaResponse.json() : null);
     setLoading(false);
   }
 
@@ -191,11 +332,11 @@ export function AdminDashboard() {
     const data = await response.json();
 
     if (!response.ok) {
-      setMessage(data.error ?? "Buchung konnte nicht geaendert werden.");
+      setMessage(data.error ?? "Buchung konnte nicht geändert werden.");
       return;
     }
 
-    setMessage("Buchung geaendert.");
+    setMessage("Buchung geändert.");
     await loadAdminData();
   }
 
@@ -204,11 +345,11 @@ export function AdminDashboard() {
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      setMessage(data.error ?? "Buchung konnte nicht geloescht werden.");
+      setMessage(data.error ?? "Buchung konnte nicht gelöscht werden.");
       return;
     }
 
-    setMessage("Buchung geloescht.");
+    setMessage("Buchung gelöscht.");
     await loadAdminData();
   }
 
@@ -221,12 +362,61 @@ export function AdminDashboard() {
     const data = await response.json();
 
     if (!response.ok) {
-      setMessage(data.error ?? "Nutzer konnte nicht geaendert werden.");
+      setMessage(data.error ?? "Nutzer konnte nicht geändert werden.");
       return;
     }
 
     setMessage("Nutzer aktualisiert.");
     await loadAdminData();
+  }
+
+  async function importNuLigaData() {
+    setNuLigaImporting(true);
+    setMessage("Import läuft...");
+    const response = await fetch("/api/admin/nuliga/import", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    setNuLigaImporting(false);
+
+    if (!response.ok) {
+      setMessage(data.error ?? "Import fehlgeschlagen.");
+      return;
+    }
+
+    setNuLigaSummary(data);
+    setMessage(`Import abgeschlossen: ${data.importedTeams} Mannschaften, ${data.importedPlayers} Spieler.`);
+    await loadAdminData();
+  }
+
+  function possibleTeamPlayerMatch(user: User) {
+    const userName = normalizeMatchName(user.name);
+    const memberNumber = user.memberNumber?.trim();
+
+    return teamPlayers.find((player) => {
+      const nameMatches = normalizeMatchName(player.fullName) === userName;
+      const numberMatches = memberNumber && player.licenseNumber === memberNumber;
+      return Boolean(numberMatches || nameMatches);
+    });
+  }
+
+  async function linkTeamPlayer(user: User) {
+    const teamPlayerId = selectedTeamPlayers[user.id] ?? user.teamPlayer?.id ?? possibleTeamPlayerMatch(user)?.id ?? "";
+    await updateUser(user, { teamPlayerId: teamPlayerId || null });
+  }
+
+  async function updateContractType(user: User, contractType: ContractType) {
+    const defaults = contractOptions[contractType];
+    await updateUser(user, {
+      contractType,
+      annualFeeCents: defaults.feeCents,
+      workHoursRequired: defaults.workHours ?? null
+    });
+  }
+
+  async function updateKeyType(user: User, keyType: KeyType) {
+    await updateUser(user, {
+      keyType,
+      hasKey: keyType !== "NONE"
+    });
   }
 
   async function saveSettings(event: FormEvent<HTMLFormElement>) {
@@ -240,6 +430,10 @@ export function AdminDashboard() {
         closingHour: Number(editableSettings.closingHour),
         slotDurationMinutes: Number(editableSettings.slotDurationMinutes),
         maxBookingDurationMinutes: Number(editableSettings.maxBookingDurationMinutes),
+        cancellationDeadlineHours: Number(editableSettings.cancellationDeadlineHours),
+        maxActiveBookingsPerUser: Number(editableSettings.maxActiveBookingsPerUser),
+        maxAdvanceBookingDaysMember: Number(editableSettings.maxAdvanceBookingDaysMember),
+        maxAdvanceBookingDaysGuest: Number(editableSettings.maxAdvanceBookingDaysGuest),
         cancellationRules: editableSettings.cancellationRules
       })
     });
@@ -297,11 +491,11 @@ export function AdminDashboard() {
 
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      setMessage(data.error ?? "Sperre konnte nicht geloescht werden.");
+      setMessage(data.error ?? "Sperre konnte nicht gelöscht werden.");
       return;
     }
 
-    setMessage("Sperre geloescht.");
+    setMessage("Sperre gelöscht.");
     await loadAdminData();
   }
 
@@ -407,12 +601,12 @@ export function AdminDashboard() {
                 </div>
                 <div className="row-actions">
                   <select value={booking.status} onChange={(event) => updateBookingStatus(booking.id, event.target.value as Booking["status"])}>
-                    <option value="CONFIRMED">Bestaetigt</option>
+                    <option value="CONFIRMED">Bestätigt</option>
                     <option value="PENDING">Pending</option>
                     <option value="CANCELLED">Storniert</option>
                   </select>
                   <button className="ghost-button danger" onClick={() => deleteBooking(booking.id)}>
-                    Loeschen
+                    Löschen
                   </button>
                 </div>
               </article>
@@ -424,65 +618,266 @@ export function AdminDashboard() {
       {activeTab === "Nutzer" ? (
         <div className="admin-list">
           <h2>Nutzer verwalten</h2>
-          {users.map((user) => (
-            <article className="admin-row" key={user.id}>
-              <div>
-                <strong>{user.name}</strong>
-                <p>{user.email}</p>
-                <small>
-                  {user.bookingCount} Buchungen · {user.membershipType === "MEMBER" ? "Mitglied" : "Gastspieler"} ·{" "}
-                  {user.membershipStatus === "PENDING"
-                    ? "Prüfung offen"
-                    : user.membershipStatus === "REJECTED"
-                      ? "Abgelehnt"
-                      : "Bestätigt"}
-                  {user.memberNumber ? ` · Nr. ${user.memberNumber}` : ""}
-                </small>
+          <section className="admin-import-card">
+            <div>
+              <p className="eyebrow">nuLiga Import</p>
+              <h3>Mannschaften und Spieler importieren</h3>
+              <p>
+                Quelle:{" "}
+                <a href={nuligaSummary?.sourceUrl ?? "#"} target="_blank" rel="noreferrer">
+                  nuLiga TV Europabad Marbach
+                </a>
+              </p>
+              <small>
+                Saison: {nuligaSummary?.season ?? "noch unbekannt"} · Letzter Import:{" "}
+                {formatDateTimeLocal(nuligaSummary?.lastImportedAt)}
+              </small>
+            </div>
+            <button className="button primary" disabled={nuligaImporting} onClick={importNuLigaData} type="button">
+              {nuligaImporting ? "Import läuft..." : "nuLiga-Daten importieren"}
+            </button>
+          </section>
+
+          {nuligaSummary ? (
+            <div className="nuliga-summary">
+              <strong>
+                {nuligaSummary.importedTeams} Mannschaften · {nuligaSummary.importedPlayers} Spieler
+              </strong>
+              <div className="team-summary-grid">
+                {nuligaSummary.teams.map((team) => (
+                  <span key={`${team.name}-${team.season ?? ""}`}>
+                    {team.name}: {team.playerCount} Spieler{team.captainCount ? `, ${team.captainCount} Mannschaftsführer` : ""}
+                  </span>
+                ))}
               </div>
-              <div className="row-actions">
-                <select
-                  value={user.membershipType}
-                  onChange={(event) => updateUser(user, { membershipType: event.target.value as User["membershipType"] })}
-                >
-                  <option value="MEMBER">Mitglied</option>
-                  <option value="EXTERNAL">Gastspieler</option>
-                </select>
-                <select
-                  value={user.membershipStatus}
-                  onChange={(event) => updateUser(user, { membershipStatus: event.target.value as User["membershipStatus"] })}
-                >
-                  <option value="PENDING">Prüfung offen</option>
-                  <option value="VERIFIED">Bestätigt</option>
-                  <option value="REJECTED">Abgelehnt</option>
-                </select>
-                <select value={user.role} onChange={(event) => updateUser(user, { role: event.target.value as User["role"] })}>
-                  <option value="USER">Nutzer</option>
-                  <option value="ADMIN">Admin</option>
-                </select>
-                <button
-                  className="ghost-button"
-                  onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "VERIFIED" })}
-                  type="button"
-                >
-                  Mitglied bestätigen
-                </button>
-                <button
-                  className="ghost-button danger"
-                  onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "REJECTED" })}
-                  type="button"
-                >
-                  Ablehnen
-                </button>
-                <button
-                  className="ghost-button"
-                  onClick={() => updateUser(user, { membershipType: "EXTERNAL", membershipStatus: "VERIFIED", memberNumber: null })}
-                  type="button"
-                >
-                  Gastspieler
-                </button>
-              </div>
-            </article>
-          ))}
+              {nuligaSummary.warnings.length ? <small>Hinweis: {nuligaSummary.warnings.join(" ")}</small> : null}
+            </div>
+          ) : null}
+
+          <div className="admin-filter-bar">
+            <label>
+              Vertragsstatus
+              <select value={contractFilter} onChange={(event) => setContractFilter(event.target.value as ContractType | "ALL")}>
+                <option value="ALL">Alle</option>
+                {Object.entries(contractOptions).map(([value, option]) => (
+                  <option value={value} key={value}>
+                    {option.shortLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Schlüsselstatus
+              <select value={keyFilter} onChange={(event) => setKeyFilter(event.target.value as KeyType | "ALL" | "WITH_KEY" | "WITHOUT_KEY")}>
+                <option value="ALL">Alle</option>
+                <option value="WITH_KEY">Mit Schlüssel</option>
+                <option value="WITHOUT_KEY">Ohne Schlüssel</option>
+                <option value="MAIN_CHANGING_COURTS">Haupttür / Umkleide / Plätze</option>
+                <option value="MAIN_CHANGING_COURTS_CLUBROOM">Haupttür / Umkleide / Plätze & Gastraum</option>
+              </select>
+            </label>
+            <label>
+              Mitgliedsstatus
+              <select value={memberFilter} onChange={(event) => setMemberFilter(event.target.value as typeof memberFilter)}>
+                <option value="ALL">Alle</option>
+                <option value="PENDING">Mitgliedschaft in Prüfung</option>
+                <option value="VERIFIED_MEMBER">Bestätigte Mitglieder</option>
+                <option value="EXTERNAL">Gastspieler</option>
+                <option value="REJECTED">Abgelehnte</option>
+              </select>
+            </label>
+          </div>
+
+          {filteredUsers.map((user) => {
+            const possibleMatch = possibleTeamPlayerMatch(user);
+            const selectedTeamPlayerId = selectedTeamPlayers[user.id] ?? user.teamPlayer?.id ?? possibleMatch?.id ?? "";
+            const contract = contractOptions[user.contractType];
+            const fee = contractFee(user);
+            const requiredHours = contractWorkHours(user);
+
+            return (
+              <article className="admin-row" key={user.id}>
+                <div>
+                  <strong>{user.name}</strong>
+                  <p>{user.email}</p>
+                  <small>
+                    {user.bookingCount} Buchungen · {user.membershipType === "MEMBER" ? "Mitglied" : "Gastspieler"} ·{" "}
+                    {user.membershipStatus === "PENDING"
+                      ? "Prüfung offen"
+                      : user.membershipStatus === "REJECTED"
+                        ? "Abgelehnt"
+                        : "Bestätigt"}
+                    {user.memberNumber ? ` · Nr. ${user.memberNumber}` : ""}
+                  </small>
+                  <small className="stacked-note">
+                    Mannschaftszuordnung:{" "}
+                    {user.teamPlayer ? `${user.teamPlayer.fullName} · ${user.teamPlayer.team?.name ?? "nuLiga"}` : "keine"}
+                  </small>
+                  {!user.teamPlayer && possibleMatch ? (
+                    <small className="match-note">
+                      Möglicher nuLiga-Treffer: {possibleMatch.fullName} · {possibleMatch.team?.name}
+                    </small>
+                  ) : null}
+                  <div className="member-meta-grid">
+                    <span className={`contract-badge contract-${user.contractType.toLowerCase().replaceAll("_", "-")}`}>
+                      {contract.shortLabel}
+                    </span>
+                    <small>
+                      Vertragsstatus: {contract.label} · {euroLabel(fee)}
+                      {requiredHours ? ` · ${requiredHours} Arbeitsstunden` : ""}
+                      {user.workHoursDone ? ` · ${user.workHoursDone} erledigt` : ""}
+                    </small>
+                    {contract.hint ? <small>{contract.hint}</small> : null}
+                    <small>Schlüssel: {keyOptions[user.keyType]}</small>
+                    {(user.contractStartDate || user.contractEndDate || user.keyIssuedAt || user.keyReturnedAt) && (
+                      <small>
+                        Vertrag: {dateInputValue(user.contractStartDate) || "offen"} bis {dateInputValue(user.contractEndDate) || "offen"} · Schlüssel:
+                        {" "}
+                        {dateInputValue(user.keyIssuedAt) || "nicht ausgegeben"} bis {dateInputValue(user.keyReturnedAt) || "nicht zurückgegeben"}
+                      </small>
+                    )}
+                  </div>
+                </div>
+                <div className="row-actions member-actions">
+                  <select
+                    value={user.membershipType}
+                    onChange={(event) => updateUser(user, { membershipType: event.target.value as User["membershipType"] })}
+                  >
+                    <option value="MEMBER">Mitglied</option>
+                    <option value="EXTERNAL">Gastspieler</option>
+                  </select>
+                  <select
+                    value={user.membershipStatus}
+                    onChange={(event) => updateUser(user, { membershipStatus: event.target.value as User["membershipStatus"] })}
+                  >
+                    <option value="PENDING">Prüfung offen</option>
+                    <option value="VERIFIED">Bestätigt</option>
+                    <option value="REJECTED">Abgelehnt</option>
+                  </select>
+                  <select value={user.role} onChange={(event) => updateUser(user, { role: event.target.value as User["role"] })}>
+                    <option value="USER">Nutzer</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                  <select value={user.contractType} onChange={(event) => updateContractType(user, event.target.value as ContractType)}>
+                    {Object.entries(contractOptions).map(([value, option]) => (
+                      <option value={value} key={value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label="Vertragsbeginn"
+                    type="date"
+                    value={dateInputValue(user.contractStartDate)}
+                    onChange={(event) => updateUser(user, { contractStartDate: event.target.value || null })}
+                  />
+                  <input
+                    aria-label="Vertragsende"
+                    type="date"
+                    value={dateInputValue(user.contractEndDate)}
+                    onChange={(event) => updateUser(user, { contractEndDate: event.target.value || null })}
+                  />
+                  <input
+                    aria-label="Arbeitsstunden erforderlich"
+                    inputMode="numeric"
+                    min="0"
+                    placeholder="Std. Pflicht"
+                    type="number"
+                    value={user.workHoursRequired ?? ""}
+                    onChange={(event) => updateUser(user, { workHoursRequired: event.target.value ? Number(event.target.value) : null })}
+                  />
+                  <input
+                    aria-label="Arbeitsstunden erledigt"
+                    inputMode="numeric"
+                    min="0"
+                    placeholder="Std. erledigt"
+                    type="number"
+                    value={user.workHoursDone ?? 0}
+                    onChange={(event) => updateUser(user, { workHoursDone: Number(event.target.value) })}
+                  />
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      const note = window.prompt("Vertragsnotiz", user.contractNote ?? "");
+                      if (note !== null) {
+                        void updateUser(user, { contractNote: note || null });
+                      }
+                    }}
+                    type="button"
+                  >
+                    Vertragsnotiz
+                  </button>
+                  <select value={user.keyType} onChange={(event) => updateKeyType(user, event.target.value as KeyType)}>
+                    {Object.entries(keyOptions).map(([value, label]) => (
+                      <option value={value} key={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    aria-label="Schlüssel-Ausgabedatum"
+                    type="date"
+                    value={dateInputValue(user.keyIssuedAt)}
+                    onChange={(event) => updateUser(user, { keyIssuedAt: event.target.value || null })}
+                  />
+                  <input
+                    aria-label="Schlüssel-Rückgabedatum"
+                    type="date"
+                    value={dateInputValue(user.keyReturnedAt)}
+                    onChange={(event) => updateUser(user, { keyReturnedAt: event.target.value || null })}
+                  />
+                  <button
+                    className="ghost-button"
+                    onClick={() => {
+                      const note = window.prompt("Schlüsselnotiz", user.keyNote ?? "");
+                      if (note !== null) {
+                        void updateUser(user, { keyNote: note || null });
+                      }
+                    }}
+                    type="button"
+                  >
+                    Schlüsselnotiz
+                  </button>
+                  <select
+                    aria-label="nuLiga-Spieler auswählen"
+                    value={selectedTeamPlayerId}
+                    onChange={(event) => setSelectedTeamPlayers((current) => ({ ...current, [user.id]: event.target.value }))}
+                  >
+                    <option value="">Kein nuLiga-Spieler</option>
+                    {teamPlayers.map((player) => (
+                      <option value={player.id} key={player.id}>
+                        {player.fullName} · {player.team?.name ?? "nuLiga"}
+                      </option>
+                    ))}
+                  </select>
+                  <button className="ghost-button" onClick={() => linkTeamPlayer(user)} type="button">
+                    Mit nuLiga-Spieler verknüpfen
+                  </button>
+                  <button
+                    className="ghost-button"
+                    onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "VERIFIED" })}
+                    type="button"
+                  >
+                    Als Mitglied bestätigen
+                  </button>
+                  <button
+                    className="ghost-button danger"
+                    onClick={() => updateUser(user, { membershipType: "MEMBER", membershipStatus: "REJECTED" })}
+                    type="button"
+                  >
+                    Ablehnen
+                  </button>
+                  <button
+                    className="ghost-button"
+                    onClick={() => updateUser(user, { membershipType: "EXTERNAL", membershipStatus: "VERIFIED", memberNumber: null })}
+                    type="button"
+                  >
+                    Gastspieler
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : null}
 
@@ -491,7 +886,7 @@ export function AdminDashboard() {
           <h2>Preise und buchbare Zeitfenster</h2>
           <div className="form-row">
             <label>
-              Preis pro Stunde fuer Gastspieler
+              Preis pro Stunde für Gastspieler
               <input
                 inputMode="decimal"
                 value={editableSettings.externalHourlyRate}
@@ -512,7 +907,7 @@ export function AdminDashboard() {
           </div>
           <div className="form-row">
             <label>
-              Oeffnung
+              Öffnung
               <input
                 type="number"
                 min="0"
@@ -522,7 +917,7 @@ export function AdminDashboard() {
               />
             </label>
             <label>
-              Schliessung
+              Schließung
               <input
                 type="number"
                 min="1"
@@ -540,6 +935,46 @@ export function AdminDashboard() {
               />
             </label>
           </div>
+          <div className="form-row">
+            <label>
+              Stornofrist in Stunden
+              <input
+                type="number"
+                min="0"
+                value={editableSettings.cancellationDeadlineHours}
+                onChange={(event) => setEditableSettings({ ...editableSettings, cancellationDeadlineHours: event.target.value })}
+              />
+            </label>
+            <label>
+              Max. aktive Buchungen
+              <input
+                type="number"
+                min="1"
+                value={editableSettings.maxActiveBookingsPerUser}
+                onChange={(event) => setEditableSettings({ ...editableSettings, maxActiveBookingsPerUser: event.target.value })}
+              />
+            </label>
+          </div>
+          <div className="form-row">
+            <label>
+              Vorausbuchung Mitglieder in Tagen
+              <input
+                type="number"
+                min="1"
+                value={editableSettings.maxAdvanceBookingDaysMember}
+                onChange={(event) => setEditableSettings({ ...editableSettings, maxAdvanceBookingDaysMember: event.target.value })}
+              />
+            </label>
+            <label>
+              Vorausbuchung Gäste in Tagen
+              <input
+                type="number"
+                min="1"
+                value={editableSettings.maxAdvanceBookingDaysGuest}
+                onChange={(event) => setEditableSettings({ ...editableSettings, maxAdvanceBookingDaysGuest: event.target.value })}
+              />
+            </label>
+          </div>
           <label>
             Stornoregeln
             <textarea
@@ -553,10 +988,10 @@ export function AdminDashboard() {
         </form>
       ) : null}
 
-      {activeTab === "Plaetze & Sperren" ? (
+      {activeTab === "Plätze & Sperren" ? (
         <div className="admin-two-column">
           <div className="admin-list">
-            <h2>Platzuebersicht</h2>
+            <h2>Platzübersicht</h2>
             {courts.map((court) => (
               <article className="admin-row" key={court.id}>
                 <div>
@@ -575,7 +1010,7 @@ export function AdminDashboard() {
                   <button
                     className="ghost-button"
                     onClick={() => {
-                      const notes = window.prompt("Notiz fuer den Platz", court.notes ?? "");
+                      const notes = window.prompt("Notiz für den Platz", court.notes ?? "");
                       if (notes !== null) {
                         void updateCourt(court, { notes });
                       }
@@ -647,7 +1082,7 @@ export function AdminDashboard() {
                   {block.reason ? <small>{block.reason}</small> : null}
                 </div>
                 <button className="ghost-button danger" onClick={() => deleteBlock(block.id)}>
-                  Loeschen
+                  Löschen
                 </button>
               </article>
             ))}

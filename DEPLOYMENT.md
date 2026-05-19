@@ -293,6 +293,60 @@ Bei iFrame-Einbettung:
 EMBEDDED_COOKIE_MODE=true
 ```
 
+## WordPress-Anbindung
+
+Empfohlen bleibt die stabile Subdomain-Variante:
+
+```text
+WordPress-Menüpunkt "Platz buchen" -> https://buchung.tveuropabad-marbach.de
+```
+
+Ein iFrame ist nur optional und weniger robust. Mögliche Probleme:
+
+- Cookies und Session Handling im eingebetteten Kontext
+- `SameSite`-Cookie-Verhalten je nach Browser
+- Mobile Höhe und Scrollverhalten im WordPress-Layout
+- Stripe Checkout sollte besser außerhalb eines iFrames laufen
+- CORS/CSP- oder Hosting-Header können Einbettung blockieren
+
+Die App setzt Session-Cookies standardmäßig mit `SameSite=Lax`; in Production werden Cookies sicher (`Secure`) gesetzt. Für iFrame-Tests kann `EMBEDDED_COOKIE_MODE=true` genutzt werden, stabiler ist aber der direkte Link auf die Subdomain.
+
+## Stripe und Zahlungsstatus
+
+Für lokale Tests kann Demo-Modus genutzt werden:
+
+```env
+STRIPE_DEMO_MODE=true
+```
+
+Für den Livebetrieb:
+
+```env
+STRIPE_DEMO_MODE=false
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+APP_URL=https://buchung.tveuropabad-marbach.de
+```
+
+Stripe Webhook in Stripe konfigurieren:
+
+```text
+https://buchung.tveuropabad-marbach.de/api/payments/stripe-webhook
+```
+
+Wichtig: Externe Buchungen bleiben zunächst `PENDING` und werden erst durch den Stripe Webhook auf `CONFIRMED` gesetzt. Abgelaufene oder fehlgeschlagene Zahlungen werden storniert und geben den Slot wieder frei.
+
+## Rate Limiting
+
+Die sensiblen Auth-Endpunkte haben einen einfachen In-Memory-Basisschutz:
+
+- Login
+- Registrierung
+- Passwort vergessen
+- Passwort zurücksetzen
+
+Für echte Production auf Vercel wird ein externer Store empfohlen, z. B. Upstash Redis, weil serverlose Instanzen keinen dauerhaft gemeinsamen Speicher haben.
+
 ## E-Mail-Versand mit Resend
 
 Die App nutzt Resend fuer:
@@ -353,6 +407,65 @@ Grund:
 - Buchungen muessen serverseitig geprueft und gespeichert werden
 
 Es gibt daher keinen empfohlenen FTP-Upload-Ordner wie `out/` oder `dist/`.
+
+## nuLiga-Import und Datenschutz
+
+Im Adminbereich gibt es eine One-Click-Funktion **nuLiga-Daten importieren**. Sie liest öffentlich erreichbare Mannschafts- und Spielerinformationen für den Verein von:
+
+```text
+https://htv.liga.nu/cgi-bin/WebObjects/nuLigaTENDE.woa/wa/clubPools?club=24835
+```
+
+Technisch wichtig:
+
+- Der Import läuft serverseitig über `/api/admin/nuliga/import`.
+- Die Route ist nur für Admins nutzbar.
+- Importierte Spieler werden als `TeamPlayer` gespeichert.
+- Ein importierter nuLiga-Spieler ist noch kein bestätigter App-Nutzer.
+- Registrierte Nutzer können im Adminbereich manuell mit einem nuLiga-Spieler verknüpft werden.
+- Die Mitgliedsfreigabe bleibt eine bewusste Admin-Aktion.
+- Ein Namens-Treffer wird nur als möglicher Treffer angezeigt und schaltet niemanden automatisch frei.
+
+Datenschutz-Hinweis:
+
+- Die Daten stammen aus öffentlich erreichbaren Mannschaftsmeldungen.
+- Der Import dient der internen Vereinsverwaltung, Mannschaftszuordnung und Mitgliedsprüfung.
+- Es werden keine Passwörter, Tokens oder Zahlungsdaten importiert.
+- Eine datenschutzrechtliche Prüfung und passende Information der Mitglieder bleibt Aufgabe des Vereins.
+
+Für Vercel/Neon müssen nach dieser Erweiterung die Migrationen erneut gegen die Produktionsdatenbank ausgeführt werden:
+
+```bash
+npx prisma migrate deploy
+```
+
+## Vertragsstatus und Schlüsselverwaltung
+
+Die Mitgliederverwaltung enthält interne Verwaltungsfelder für:
+
+- Vertragsstatus/Mitgliedschaftsart
+- Vertragsbeginn und Vertragsende
+- Jahresbeitrag und Arbeitsstunden
+- interne Vertragsnotiz
+- Schlüsselstatus, Schlüsselart, Ausgabe- und Rückgabedatum
+- interne Schlüsselnotiz
+
+Abgebildete Mitgliedschaftsarten:
+
+- Vollmitglied: 120 EUR, 6 Arbeitsstunden
+- Familienmitglied: 60 EUR
+- Passivmitglied: 25 EUR
+- Jugend bis 18 Jahre: 50 EUR
+- Saisonkarte: 95 EUR, nur für 1 Jahr möglich
+- Noch nicht festgelegt
+
+Datenschutz-Hinweise:
+
+- Vertrags- und Schlüsselstatus sind interne Verwaltungsdaten.
+- Zugriff erfolgt nur im Adminbereich.
+- Diese Daten werden normalen Mitgliedern oder Gastspielern nicht angezeigt.
+- Es werden keine Bankdaten, IBANs, SEPA-Mandate oder Zahlungsdaten aus dem Aufnahmeantrag gespeichert.
+- Der Verein sollte die Speicherung und Aufbewahrungsfristen dieser Verwaltungsdaten datenschutzrechtlich prüfen.
 
 ## Production-Check vom 2026-05-03
 

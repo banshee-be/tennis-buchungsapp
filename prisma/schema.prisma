@@ -7,6 +7,21 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ContractType {
+  FULL_MEMBER
+  FAMILY_MEMBER
+  PASSIVE_MEMBER
+  YOUTH_MEMBER
+  SEASON_CARD
+  NONE
+}
+
+enum KeyType {
+  NONE
+  MAIN_CHANGING_COURTS
+  MAIN_CHANGING_COURTS_CLUBROOM
+}
+
 model User {
   id               String           @id @default(cuid())
   name             String
@@ -16,10 +31,24 @@ model User {
   membershipType   String           @default("EXTERNAL")
   membershipStatus String           @default("VERIFIED")
   memberNumber     String?
+  teamPlayerId     String?
+  contractType     ContractType     @default(NONE)
+  contractStartDate DateTime?
+  contractEndDate  DateTime?
+  annualFeeCents   Int?
+  workHoursRequired Int?
+  workHoursDone    Int              @default(0)
+  contractNote     String?
+  hasKey           Boolean          @default(false)
+  keyType          KeyType          @default(NONE)
+  keyIssuedAt      DateTime?
+  keyReturnedAt    DateTime?
+  keyNote          String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   bookings         Booking[]
   resetTokens      PasswordResetToken[]
+  teamPlayer       TeamPlayer?      @relation(fields: [teamPlayerId], references: [id], onDelete: SetNull)
 }
 
 model Court {
@@ -90,7 +119,11 @@ model Settings {
   openingHour               Int      @default(8)
   closingHour               Int      @default(21)
   slotDurationMinutes       Int      @default(30)
-  maxBookingDurationMinutes Int      @default(480)
+  maxBookingDurationMinutes Int      @default(120)
+  cancellationDeadlineHours Int      @default(2)
+  maxActiveBookingsPerUser  Int      @default(3)
+  maxAdvanceBookingDaysMember Int    @default(7)
+  maxAdvanceBookingDaysGuest  Int    @default(3)
   cancellationRules         String   @default("Kostenfreie Stornierung bis 24 Stunden vor Spielbeginn.")
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
@@ -120,4 +153,49 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model Team {
+  id             String       @id @default(cuid())
+  name           String
+  season         String?
+  source         String
+  sourceUrl      String
+  externalId     String?
+  lastImportedAt DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  players        TeamPlayer[]
+
+  @@unique([source, sourceUrl])
+  @@index([source, externalId])
+}
+
+model TeamPlayer {
+  id             String   @id @default(cuid())
+  teamId         String
+  rank           Int?
+  position       String?
+  lk             String?
+  nuLigaId       String?
+  firstName      String
+  lastName       String
+  fullName       String
+  birthYear      Int?
+  licenseNumber  String?
+  isCaptain      Boolean  @default(false)
+  isActive       Boolean  @default(true)
+  sourceUrl      String
+  importKey      String   @unique
+  rawData        Json?
+  lastImportedAt DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  team           Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  linkedUsers    User[]
+
+  @@index([teamId])
+  @@index([fullName])
+  @@index([nuLigaId])
+  @@index([licenseNumber])
 }

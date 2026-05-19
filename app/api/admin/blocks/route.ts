@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       | null;
 
     if (!body?.courtId || !body.date || !body.startTime || !body.endTime || !body.title?.trim()) {
-      return jsonError("Bitte Platz, Datum, Zeitraum und Titel fuer die Sperre angeben.");
+      return jsonError("Bitte Platz, Datum, Zeitraum und Titel für die Sperre angeben.");
     }
 
     const start = buildUtcDate(body.date, timeToMinutes(body.startTime));

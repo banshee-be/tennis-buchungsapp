@@ -78,7 +78,7 @@ export async function createCheckoutForBooking(params: {
   });
 
   if (!session.url) {
-    throw new Error("Stripe hat keine Checkout-URL zurueckgegeben.");
+    throw new Error("Stripe hat keine Checkout-URL zurückgegeben.");
   }
 
   return {

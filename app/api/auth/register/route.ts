@@ -3,6 +3,7 @@ import { sendAdminNewRegistrationEmail } from "@/lib/email";
 import { jsonError } from "@/lib/http";
 import { hashPassword, isValidEmail, normalizeEmail, validatePassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createSession, isAdminEmail, toSessionUser } from "@/lib/session";
 
 type RegisterBody = {
@@ -22,13 +23,18 @@ export async function POST(request: NextRequest) {
   const passwordConfirm = body?.passwordConfirm ?? "";
   const membershipType = body?.membershipType === "MEMBER" ? "MEMBER" : "EXTERNAL";
   const memberNumber = membershipType === "MEMBER" ? body?.memberNumber?.trim() || null : null;
+  const rateLimit = checkRateLimit(`register:${email || getClientIp(request)}`);
+
+  if (rateLimit.limited) {
+    return jsonError("Zu viele Versuche. Bitte später erneut versuchen.", 429);
+  }
 
   if (name.length < 2) {
     return jsonError("Bitte geben Sie Ihren Namen ein.");
   }
 
   if (!email || !isValidEmail(email)) {
-    return jsonError("Bitte geben Sie eine gueltige E-Mail-Adresse ein.");
+    return jsonError("Bitte geben Sie eine gültige E-Mail-Adresse ein.");
   }
 
   const passwordError = validatePassword(password);
@@ -37,7 +43,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (password !== passwordConfirm) {
-    return jsonError("Die Passwoerter stimmen nicht ueberein.");
+    return jsonError("Die Passwörter stimmen nicht überein.");
   }
 
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -87,7 +93,7 @@ export async function POST(request: NextRequest) {
     user: toSessionUser(user),
     message:
       membershipType === "MEMBER"
-        ? "Dein Mitgliedsstatus wird vom Verein geprueft."
-        : "Gastspieler koennen kostenpflichtige Plaetze buchen."
+        ? "Dein Mitgliedsstatus wird vom Verein geprüft."
+        : "Gastspieler können kostenpflichtige Plätze buchen."
   });
 }

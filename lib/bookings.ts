@@ -18,11 +18,18 @@ export async function releaseExpiredPendingBookings(db: Db) {
     return;
   }
 
-  await db.bookingSlot.deleteMany({
-    where: { bookingId: { in: ids } }
+  await db.bookingSlot.deleteMany({ where: { bookingId: { in: ids } } });
+  await db.payment.updateMany({
+    where: { bookingId: { in: ids }, status: "PENDING" },
+    data: { status: "FAILED" }
   });
-  await db.booking.deleteMany({
+  await db.booking.updateMany({
     where: { id: { in: ids } },
+    data: {
+      status: "CANCELLED",
+      paymentStatus: "FAILED",
+      cancelReason: "Zahlung abgelaufen."
+    }
   });
 }
 
@@ -120,14 +127,27 @@ export async function deletePendingBookingHold(db: Db, bookingId: string) {
     return null;
   }
 
-  if (booking.status !== "PENDING") {
-    return cancelBooking(db, bookingId, "Zahlung fehlgeschlagen.");
+  return cancelBooking(db, bookingId, booking.status === "PENDING" ? "Zahlung abgelaufen." : "Zahlung fehlgeschlagen.");
+}
+
+export async function assertUserCanCancelBooking(
+  booking: Pick<Booking, "startTime" | "status">,
+  cancellationDeadlineHours: number
+) {
+  if (booking.status === "CANCELLED") {
+    throw new Error("Diese Buchung ist bereits storniert.");
   }
 
-  await db.bookingSlot.deleteMany({ where: { bookingId } });
-  await db.booking.delete({ where: { id: bookingId } });
+  const now = Date.now();
+  const startTime = booking.startTime.getTime();
 
-  return booking;
+  if (startTime <= now) {
+    throw new Error("Vergangene Buchungen können nicht storniert werden.");
+  }
+
+  if (startTime - now < cancellationDeadlineHours * 60 * 60_000) {
+    throw new Error("Stornierung nicht mehr möglich.");
+  }
 }
 
 export async function confirmPaidBooking(bookingId: string, providerPaymentId?: string | null) {

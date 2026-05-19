@@ -11,7 +11,11 @@ async function main() {
   await prisma.settings.upsert({
     where: { id: "default" },
     update: {
-      maxBookingDurationMinutes: 480
+      maxBookingDurationMinutes: 120,
+      cancellationDeadlineHours: 2,
+      maxActiveBookingsPerUser: 3,
+      maxAdvanceBookingDaysMember: 7,
+      maxAdvanceBookingDaysGuest: 3
     },
     create: {
       id: "default",
@@ -19,7 +23,11 @@ async function main() {
       openingHour: 8,
       closingHour: 21,
       slotDurationMinutes: 30,
-      maxBookingDurationMinutes: 480,
+      maxBookingDurationMinutes: 120,
+      cancellationDeadlineHours: 2,
+      maxActiveBookingsPerUser: 3,
+      maxAdvanceBookingDaysMember: 7,
+      maxAdvanceBookingDaysGuest: 3,
       cancellationRules: "Kostenfreie Stornierung bis 24 Stunden vor Spielbeginn."
     }
   });

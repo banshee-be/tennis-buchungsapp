@@ -15,7 +15,7 @@ export function ForgotPasswordForm() {
       body: JSON.stringify({ email })
     });
     const data = await response.json();
-    setMessage(data.message ?? "Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zuruecksetzen gesendet.");
+    setMessage(data.message ?? "Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zurücksetzen gesendet.");
   }
 
   return (

@@ -1,0 +1,28 @@
+CREATE TYPE "ContractType" AS ENUM (
+  'FULL_MEMBER',
+  'FAMILY_MEMBER',
+  'PASSIVE_MEMBER',
+  'YOUTH_MEMBER',
+  'SEASON_CARD',
+  'NONE'
+);
+
+CREATE TYPE "KeyType" AS ENUM (
+  'NONE',
+  'MAIN_CHANGING_COURTS',
+  'MAIN_CHANGING_COURTS_CLUBROOM'
+);
+
+ALTER TABLE "User"
+  ADD COLUMN "contractType" "ContractType" NOT NULL DEFAULT 'NONE',
+  ADD COLUMN "contractStartDate" TIMESTAMP(3),
+  ADD COLUMN "contractEndDate" TIMESTAMP(3),
+  ADD COLUMN "annualFeeCents" INTEGER,
+  ADD COLUMN "workHoursRequired" INTEGER,
+  ADD COLUMN "workHoursDone" INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN "contractNote" TEXT,
+  ADD COLUMN "hasKey" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN "keyType" "KeyType" NOT NULL DEFAULT 'NONE',
+  ADD COLUMN "keyIssuedAt" TIMESTAMP(3),
+  ADD COLUMN "keyReturnedAt" TIMESTAMP(3),
+  ADD COLUMN "keyNote" TEXT;

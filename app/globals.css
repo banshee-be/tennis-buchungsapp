@@ -893,6 +893,104 @@ textarea:focus {
   background: var(--surface);
 }
 
+.admin-import-card,
+.nuliga-summary {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #f8fbf8;
+}
+
+.admin-import-card h3 {
+  margin: 2px 0 6px;
+}
+
+.admin-import-card p,
+.nuliga-summary small {
+  margin: 0;
+  color: var(--muted);
+}
+
+.nuliga-summary {
+  display: grid;
+  align-items: start;
+}
+
+.team-summary-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-summary-grid span,
+.match-note,
+.stacked-note {
+  display: block;
+}
+
+.team-summary-grid span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 0.86rem;
+}
+
+.match-note {
+  margin-top: 4px;
+  color: var(--green-dark) !important;
+}
+
+.admin-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfb;
+}
+
+.member-meta-grid {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.contract-badge {
+  width: fit-content;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.contract-none {
+  background: #eef0ef;
+  color: var(--muted);
+}
+
+.contract-season-card {
+  background: #fff3d8;
+  color: #87540d;
+}
+
+.member-actions {
+  align-items: stretch;
+  max-width: 760px;
+}
+
+.member-actions input,
+.member-actions select {
+  min-width: 148px;
+}
+
 .settings-form {
   max-width: 860px;
 }

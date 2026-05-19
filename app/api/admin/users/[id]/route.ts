@@ -3,6 +3,20 @@ import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 
+const contractTypes = ["FULL_MEMBER", "FAMILY_MEMBER", "PASSIVE_MEMBER", "YOUTH_MEMBER", "SEASON_CARD", "NONE"] as const;
+const keyTypes = ["NONE", "MAIN_CHANGING_COURTS", "MAIN_CHANGING_COURTS_CLUBROOM"] as const;
+
+function optionalDate(value: string | null | undefined) {
+  if (value === null) {
+    return null;
+  }
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
     await requireAdmin();
@@ -12,6 +26,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           membershipType?: "MEMBER" | "EXTERNAL";
           membershipStatus?: "PENDING" | "VERIFIED" | "REJECTED";
           memberNumber?: string | null;
+          teamPlayerId?: string | null;
+          contractType?: (typeof contractTypes)[number];
+          contractStartDate?: string | null;
+          contractEndDate?: string | null;
+          annualFeeCents?: number | null;
+          workHoursRequired?: number | null;
+          workHoursDone?: number | null;
+          contractNote?: string | null;
+          hasKey?: boolean;
+          keyType?: (typeof keyTypes)[number];
+          keyIssuedAt?: string | null;
+          keyReturnedAt?: string | null;
+          keyNote?: string | null;
           role?: "USER" | "ADMIN";
           name?: string;
         }
@@ -23,6 +50,8 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
     const membershipStatus = body.membershipType === "EXTERNAL" ? "VERIFIED" : body.membershipStatus;
     const memberNumber = body.membershipType === "EXTERNAL" ? null : body.memberNumber;
+    const keyType = body.keyType && keyTypes.includes(body.keyType) ? body.keyType : undefined;
+    const hasKey = keyType === "NONE" ? false : keyType ? true : body.hasKey;
 
     const user = await prisma.user.update({
       where: { id },
@@ -31,6 +60,19 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         membershipType: body.membershipType,
         membershipStatus,
         memberNumber: memberNumber === null ? null : memberNumber?.trim() || undefined,
+        teamPlayerId: body.teamPlayerId === null ? null : body.teamPlayerId || undefined,
+        contractType: body.contractType && contractTypes.includes(body.contractType) ? body.contractType : undefined,
+        contractStartDate: optionalDate(body.contractStartDate),
+        contractEndDate: optionalDate(body.contractEndDate),
+        annualFeeCents: body.annualFeeCents === null ? null : body.annualFeeCents,
+        workHoursRequired: body.workHoursRequired === null ? null : body.workHoursRequired,
+        workHoursDone: body.workHoursDone === null ? undefined : body.workHoursDone,
+        contractNote: body.contractNote === null ? null : body.contractNote?.trim() || undefined,
+        hasKey,
+        keyType,
+        keyIssuedAt: optionalDate(body.keyIssuedAt),
+        keyReturnedAt: optionalDate(body.keyReturnedAt),
+        keyNote: body.keyNote === null ? null : body.keyNote?.trim() || undefined,
         role: body.role
       }
     });

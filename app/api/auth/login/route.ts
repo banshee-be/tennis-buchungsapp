@@ -2,15 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError } from "@/lib/http";
 import { isValidEmail, normalizeEmail, verifyPassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { createSession, toSessionUser } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as { email?: string; password?: string } | null;
   const email = body?.email ? normalizeEmail(body.email) : "";
   const password = body?.password ?? "";
+  const rateLimit = checkRateLimit(`login:${email || getClientIp(request)}`);
+
+  if (rateLimit.limited) {
+    return jsonError("Zu viele Versuche. Bitte später erneut versuchen.", 429);
+  }
 
   if (!email || !isValidEmail(email) || !password) {
-    return jsonError("Bitte geben Sie eine gueltige E-Mail-Adresse ein.");
+    return jsonError("Bitte geben Sie eine gültige E-Mail-Adresse ein.");
   }
 
   const user = await prisma.user.findUnique({ where: { email } });

@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
   try {
     event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Ungueltige Stripe-Signatur.";
+    const message = error instanceof Error ? error.message : "Ungültige Stripe-Signatur.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 

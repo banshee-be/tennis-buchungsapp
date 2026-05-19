@@ -9,8 +9,8 @@ export default function HomePage() {
           <p className="eyebrow">TV Europabad Marbach</p>
           <h1>Tennisanlage Marburg-Marbach</h1>
           <p className="lead">
-            Eine moderne Platzbuchung fuer Vereinsmitglieder und Gastspieler. Mitglieder buchen direkt, externe
-            Gastspieler werden vor der Bestaetigung zur Zahlung weitergeleitet.
+            Eine moderne Platzbuchung für Vereinsmitglieder und Gastspieler. Mitglieder buchen direkt, externe
+            Gastspieler werden vor der Bestätigung zur Zahlung weitergeleitet.
           </p>
           <div className="cta-row">
             <Link className="button primary" href="/buchen">
@@ -32,8 +32,8 @@ export default function HomePage() {
             className="hero-photo-image"
           />
           <div className="court-labels">
-            <strong>4 Plaetze</strong>
-            <small>Tagesansicht, Sperren und Live-Verfuegbarkeit</small>
+            <strong>4 Plätze</strong>
+            <small>Tagesansicht, Sperren und Live-Verfügbarkeit</small>
           </div>
         </div>
       </div>

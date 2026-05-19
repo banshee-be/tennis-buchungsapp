@@ -22,6 +22,10 @@ export async function PATCH(request: NextRequest) {
           closingHour?: number;
           slotDurationMinutes?: number;
           maxBookingDurationMinutes?: number;
+          cancellationDeadlineHours?: number;
+          maxActiveBookingsPerUser?: number;
+          maxAdvanceBookingDaysMember?: number;
+          maxAdvanceBookingDaysGuest?: number;
           cancellationRules?: string;
         }
       | null;
@@ -34,6 +38,10 @@ export async function PATCH(request: NextRequest) {
     const closingHour = Number(body.closingHour);
     const slotDurationMinutes = Number(body.slotDurationMinutes);
     const maxBookingDurationMinutes = Number(body.maxBookingDurationMinutes);
+    const cancellationDeadlineHours = Number(body.cancellationDeadlineHours);
+    const maxActiveBookingsPerUser = Number(body.maxActiveBookingsPerUser);
+    const maxAdvanceBookingDaysMember = Number(body.maxAdvanceBookingDaysMember);
+    const maxAdvanceBookingDaysGuest = Number(body.maxAdvanceBookingDaysGuest);
     const externalHourlyRateCents = Number(body.externalHourlyRateCents);
 
     if (
@@ -43,15 +51,28 @@ export async function PATCH(request: NextRequest) {
       closingHour > 24 ||
       openingHour >= closingHour
     ) {
-      return jsonError("Bitte gueltige Oeffnungszeiten eintragen.");
+      return jsonError("Bitte gültige Öffnungszeiten eintragen.");
     }
 
     if (![15, 30, 60].includes(slotDurationMinutes)) {
-      return jsonError("Zeitfenster muessen 15, 30 oder 60 Minuten lang sein.");
+      return jsonError("Zeitfenster müssen 15, 30 oder 60 Minuten lang sein.");
     }
 
     if (maxBookingDurationMinutes < slotDurationMinutes || maxBookingDurationMinutes > 480) {
       return jsonError("Die maximale Buchungsdauer muss zwischen Slotdauer und 480 Minuten liegen.");
+    }
+
+    if (
+      !Number.isInteger(cancellationDeadlineHours) ||
+      cancellationDeadlineHours < 0 ||
+      !Number.isInteger(maxActiveBookingsPerUser) ||
+      maxActiveBookingsPerUser < 1 ||
+      !Number.isInteger(maxAdvanceBookingDaysMember) ||
+      maxAdvanceBookingDaysMember < 1 ||
+      !Number.isInteger(maxAdvanceBookingDaysGuest) ||
+      maxAdvanceBookingDaysGuest < 1
+    ) {
+      return jsonError("Bitte gültige Buchungsregeln eintragen.");
     }
 
     if (externalHourlyRateCents < 0) {
@@ -66,6 +87,10 @@ export async function PATCH(request: NextRequest) {
         closingHour,
         slotDurationMinutes,
         maxBookingDurationMinutes,
+        cancellationDeadlineHours,
+        maxActiveBookingsPerUser,
+        maxAdvanceBookingDaysMember,
+        maxAdvanceBookingDaysGuest,
         cancellationRules: body.cancellationRules?.trim() || undefined
       }
     });

@@ -10,6 +10,8 @@ type Booking = {
   paymentStatus: "NOT_REQUIRED" | "PENDING" | "PAID" | "FAILED";
   totalAmountCents: number;
   court?: { name: string };
+  canCancel?: boolean;
+  cancellationUnavailableReason?: string | null;
 };
 
 function formatDateRange(booking: Booking) {
@@ -23,7 +25,7 @@ function formatDateRange(booking: Booking) {
 
 function statusLabel(booking: Booking) {
   if (booking.status === "CONFIRMED") {
-    return "Bestaetigt";
+    return "Bestätigt";
   }
   if (booking.status === "PENDING") {
     return "Zahlungspflichtig";
@@ -91,10 +93,12 @@ export function MyBookings() {
               <p>{formatDateRange(booking)}</p>
               <small>Zahlung: {booking.paymentStatus === "NOT_REQUIRED" ? "nicht erforderlich" : booking.paymentStatus}</small>
             </div>
-            {booking.status !== "CANCELLED" ? (
+            {booking.status !== "CANCELLED" && booking.canCancel ? (
               <button className="button secondary" onClick={() => cancelBooking(booking.id)}>
                 Stornieren
               </button>
+            ) : booking.status !== "CANCELLED" && booking.cancellationUnavailableReason ? (
+              <small>{booking.cancellationUnavailableReason}</small>
             ) : null}
           </article>
         ))

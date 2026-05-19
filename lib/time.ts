@@ -6,7 +6,7 @@ export type BookingInputTime = {
 
 export function assertDateString(date: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    throw new Error("Bitte ein gueltiges Datum waehlen.");
+    throw new Error("Bitte ein gültiges Datum wählen.");
   }
 }
 
@@ -14,14 +14,14 @@ export function timeToMinutes(time: string) {
   const match = /^(\d{2}):(\d{2})$/.exec(time);
 
   if (!match) {
-    throw new Error("Bitte eine gueltige Uhrzeit waehlen.");
+    throw new Error("Bitte eine gültige Uhrzeit wählen.");
   }
 
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
 
   if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-    throw new Error("Bitte eine gueltige Uhrzeit waehlen.");
+    throw new Error("Bitte eine gültige Uhrzeit wählen.");
   }
 
   return hours * 60 + minutes;
@@ -93,11 +93,11 @@ export function parseBookingInput(
   const closingMinutes = settings.closingHour * 60;
 
   if (!Number.isInteger(durationMinutes) || durationMinutes <= 0) {
-    throw new Error("Bitte eine gueltige Buchungsdauer waehlen.");
+    throw new Error("Bitte eine gültige Buchungsdauer wählen.");
   }
 
   if (durationMinutes > settings.maxBookingDurationMinutes) {
-    throw new Error("Die gewaehlte Dauer ist laenger als erlaubt.");
+    throw new Error("Die gewählte Dauer ist länger als erlaubt.");
   }
 
   if (durationMinutes % settings.slotDurationMinutes !== 0) {
@@ -105,7 +105,7 @@ export function parseBookingInput(
   }
 
   if (startMinutes < openingMinutes || startMinutes + durationMinutes > closingMinutes) {
-    throw new Error("Die Buchung liegt ausserhalb der Oeffnungszeiten.");
+    throw new Error("Die Buchung liegt außerhalb der Öffnungszeiten.");
   }
 
   if ((startMinutes - openingMinutes) % settings.slotDurationMinutes !== 0) {

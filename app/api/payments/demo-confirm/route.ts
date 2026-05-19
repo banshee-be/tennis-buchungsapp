@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const confirmed = await confirmPaidBooking(body.bookingId, "demo_payment");
 
     if (!confirmed) {
-      return jsonError("Buchung konnte nicht bestaetigt werden.", 409);
+      return jsonError("Buchung konnte nicht bestätigt werden.", 409);
     }
 
     return NextResponse.json({ booking: serializeBooking(confirmed) });

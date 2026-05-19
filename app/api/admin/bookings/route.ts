@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       | null;
 
     if (!body?.name || !body.email || !body.courtId || !body.date || !body.startTime || !body.durationMinutes) {
-      return jsonError("Bitte alle Felder fuer die manuelle Buchung ausfuellen.");
+      return jsonError("Bitte alle Felder für die manuelle Buchung ausfüllen.");
     }
 
     const email = body.email.trim().toLowerCase();

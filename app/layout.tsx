@@ -19,7 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <footer className="site-footer">
           <div>
             <strong>{clubName}</strong>
-            <span>Platzbuchung fuer Mitglieder und Gastspieler</span>
+            <span>Platzbuchung für Mitglieder und Gastspieler</span>
           </div>
           <Link href="/admin">Admin-Bereich</Link>
         </footer>

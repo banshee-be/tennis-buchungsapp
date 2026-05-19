@@ -16,10 +16,49 @@ export async function GET() {
         membershipType: true,
         membershipStatus: true,
         memberNumber: true,
+        contractType: true,
+        contractStartDate: true,
+        contractEndDate: true,
+        annualFeeCents: true,
+        workHoursRequired: true,
+        workHoursDone: true,
+        contractNote: true,
+        hasKey: true,
+        keyType: true,
+        keyIssuedAt: true,
+        keyReturnedAt: true,
+        keyNote: true,
         createdAt: true,
         updatedAt: true,
+        teamPlayer: {
+          select: {
+            id: true,
+            fullName: true,
+            team: {
+              select: { name: true, season: true }
+            }
+          }
+        },
         bookings: {
           select: { id: true }
+        }
+      }
+    });
+
+    const teamPlayers = await prisma.teamPlayer.findMany({
+      where: { isActive: true },
+      orderBy: [{ team: { name: "asc" } }, { rank: "asc" }, { fullName: "asc" }],
+      select: {
+        id: true,
+        fullName: true,
+        firstName: true,
+        lastName: true,
+        birthYear: true,
+        licenseNumber: true,
+        isCaptain: true,
+        rank: true,
+        team: {
+          select: { name: true, season: true }
         }
       }
     });
@@ -28,10 +67,15 @@ export async function GET() {
       users: users.map((user) => ({
         ...user,
         bookingCount: user.bookings.length,
+        contractStartDate: user.contractStartDate?.toISOString() ?? null,
+        contractEndDate: user.contractEndDate?.toISOString() ?? null,
+        keyIssuedAt: user.keyIssuedAt?.toISOString() ?? null,
+        keyReturnedAt: user.keyReturnedAt?.toISOString() ?? null,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
         bookings: undefined
-      }))
+      })),
+      teamPlayers
     });
   });
 }

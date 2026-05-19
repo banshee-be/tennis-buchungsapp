@@ -25,7 +25,7 @@ export default function DemoPaymentPage() {
     setLoading(false);
 
     if (!response.ok) {
-      setMessage(data.error ?? "Zahlung konnte nicht bestaetigt werden.");
+      setMessage(data.error ?? "Zahlung konnte nicht bestätigt werden.");
       return;
     }
 
@@ -38,12 +38,12 @@ export default function DemoPaymentPage() {
         <p className="eyebrow">Demo-Zahlung</p>
         <h1>Jetzt bezahlen</h1>
         <p>
-          Dies ist der lokale Testmodus. In Produktion fuehrt diese Stelle zu Stripe Checkout und die Bestaetigung
-          erfolgt ueber den Stripe Webhook.
+          Dies ist der lokale Testmodus. In Produktion führt diese Stelle zu Stripe Checkout und die Bestätigung
+          erfolgt über den Stripe Webhook.
         </p>
         {message ? <p className="form-error">{message}</p> : null}
         <button className="button primary full" disabled={loading || !bookingId} onClick={confirmDemoPayment}>
-          {loading ? "Zahlung wird geprueft..." : "Demo-Zahlung abschliessen"}
+          {loading ? "Zahlung wird geprüft..." : "Demo-Zahlung abschließen"}
         </button>
       </div>
     </section>

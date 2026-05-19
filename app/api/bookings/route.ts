@@ -25,8 +25,28 @@ export async function GET() {
       include: bookingInclude(),
       orderBy: { startTime: "desc" }
     });
+    const settings = await getSettings();
+    const now = Date.now();
 
-    return NextResponse.json({ bookings: bookings.map(serializeBooking) });
+    return NextResponse.json({
+      bookings: bookings.map((booking) => {
+        const serialized = serializeBooking(booking);
+        const canCancel =
+          booking.status !== "CANCELLED" &&
+          booking.startTime.getTime() > now &&
+          booking.startTime.getTime() - now >= settings.cancellationDeadlineHours * 60 * 60_000;
+        const cancellationUnavailableReason =
+          booking.status === "CANCELLED"
+            ? null
+            : booking.startTime.getTime() <= now
+              ? "Vergangene Buchungen können nicht storniert werden."
+              : canCancel
+                ? null
+                : "Stornierung nicht mehr möglich.";
+
+        return { ...serialized, canCancel, cancellationUnavailableReason };
+      })
+    });
   });
 }
 
@@ -38,7 +58,7 @@ export async function POST(request: NextRequest) {
       | null;
 
     if (!body?.courtId || !body.date || !body.startTime || !body.durationMinutes) {
-      return jsonError("Bitte Platz, Datum, Uhrzeit und Dauer auswaehlen.");
+      return jsonError("Bitte Platz, Datum, Uhrzeit und Dauer auswählen.");
     }
 
     const settings = await getSettings();
@@ -59,6 +79,35 @@ export async function POST(request: NextRequest) {
     const isMember = isVerifiedMember(user);
     const amountCents = isMember ? 0 : calculateAmountCents(settings.externalHourlyRateCents, parsed.durationMinutes);
     let bookingIdForCleanup: string | null = null;
+    const isAdmin = user.role === "ADMIN";
+
+    if (!isAdmin) {
+      const activeBookings = await prisma.booking.count({
+        where: {
+          userId: user.id,
+          startTime: { gt: new Date() },
+          OR: [
+            { status: "CONFIRMED" },
+            {
+              status: "PENDING",
+              expiresAt: { gt: new Date() }
+            }
+          ]
+        }
+      });
+
+      if (activeBookings >= settings.maxActiveBookingsPerUser) {
+        return jsonError("Du hast die maximale Anzahl aktiver Buchungen erreicht.", 409);
+      }
+
+      const maxAdvanceDays = isMember ? settings.maxAdvanceBookingDaysMember : settings.maxAdvanceBookingDaysGuest;
+      const latestAllowedStart = new Date();
+      latestAllowedStart.setDate(latestAllowedStart.getDate() + maxAdvanceDays);
+
+      if (parsed.start > latestAllowedStart) {
+        return jsonError("Dieses Datum liegt außerhalb des erlaubten Buchungszeitraums.", 409);
+      }
+    }
 
     try {
       const result = await prisma.$transaction(async (tx) => {
@@ -75,7 +124,7 @@ export async function POST(request: NextRequest) {
             status: isMember ? "CONFIRMED" : "PENDING",
             paymentStatus: isMember ? "NOT_REQUIRED" : "PENDING",
             totalAmountCents: amountCents,
-            expiresAt: isMember ? null : new Date(Date.now() + 10 * 60_000)
+            expiresAt: isMember ? null : new Date(Date.now() + 15 * 60_000)
           },
           include: bookingInclude()
         });
@@ -102,7 +151,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           booking: serializeBooking(result.booking),
           requiresPayment: false,
-          message: "Buchung bestaetigt."
+          message: "Buchung bestätigt."
         });
       }
 
@@ -125,7 +174,7 @@ export async function POST(request: NextRequest) {
         booking: serializeBooking(result.booking),
         requiresPayment: true,
         checkoutUrl: checkout.checkoutUrl,
-        message: "Bitte Zahlung abschliessen."
+        message: "Bitte Zahlung abschließen."
       });
     } catch (error) {
       if (bookingIdForCleanup) {

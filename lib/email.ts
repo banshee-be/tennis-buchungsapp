@@ -81,7 +81,7 @@ export async function sendAdminNewRegistrationEmail(user: RegistrationUser) {
 
   if (recipients.length === 0) {
     if (process.env.NODE_ENV !== "production") {
-      console.info("Keine Admin-Empfaenger fuer Registrierungsbenachrichtigung konfiguriert.");
+      console.info("Keine Admin-Empfänger für Registrierungsbenachrichtigung konfiguriert.");
     }
     return;
   }

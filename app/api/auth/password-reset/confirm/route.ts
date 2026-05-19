@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { jsonError } from "@/lib/http";
 import { hashPassword, hashResetToken, validatePassword } from "@/lib/passwords";
 import { prisma } from "@/lib/prisma";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as
@@ -10,9 +11,14 @@ export async function POST(request: NextRequest) {
   const token = body?.token ?? "";
   const password = body?.password ?? "";
   const passwordConfirm = body?.passwordConfirm ?? "";
+  const rateLimit = checkRateLimit(`password-reset-confirm:${getClientIp(request)}`);
+
+  if (rateLimit.limited) {
+    return jsonError("Zu viele Versuche. Bitte später erneut versuchen.", 429);
+  }
 
   if (!token) {
-    return jsonError("Der Link ist ungueltig oder abgelaufen.", 400);
+    return jsonError("Der Link ist ungültig oder abgelaufen.", 400);
   }
 
   const passwordError = validatePassword(password);
@@ -21,7 +27,7 @@ export async function POST(request: NextRequest) {
   }
 
   if (password !== passwordConfirm) {
-    return jsonError("Die Passwoerter stimmen nicht ueberein.");
+    return jsonError("Die Passwörter stimmen nicht überein.");
   }
 
   const resetToken = await prisma.passwordResetToken.findUnique({
@@ -29,7 +35,7 @@ export async function POST(request: NextRequest) {
   });
 
   if (!resetToken || resetToken.usedAt || resetToken.expiresAt.getTime() < Date.now()) {
-    return jsonError("Der Link ist ungueltig oder abgelaufen.", 400);
+    return jsonError("Der Link ist ungültig oder abgelaufen.", 400);
   }
 
   const passwordHash = await hashPassword(password);
