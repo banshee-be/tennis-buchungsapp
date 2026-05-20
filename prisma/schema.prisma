@@ -53,6 +53,7 @@ model User {
   bookings         Booking[]
   resetTokens      PasswordResetToken[]
   teamPlayer       TeamPlayer?      @relation(fields: [teamPlayerId], references: [id], onDelete: SetNull)
+  teamPlayerLinks  UserTeamPlayer[]
 }
 
 model Court {
@@ -180,13 +181,17 @@ model TeamPlayer {
   teamId         String
   rank           Int?
   position       String?
+  teamPosition   String?
   lk             String?
   nuLigaId       String?
   firstName      String
   lastName       String
   fullName       String
   birthYear      Int?
+  nation         String?
   licenseNumber  String?
+  info           String?
+  msg            String?
   isCaptain      Boolean  @default(false)
   isActive       Boolean  @default(true)
   sourceUrl      String
@@ -197,9 +202,24 @@ model TeamPlayer {
   updatedAt      DateTime @updatedAt
   team           Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
   linkedUsers    User[]
+  userLinks      UserTeamPlayer[]
 
   @@index([teamId])
   @@index([fullName])
   @@index([nuLigaId])
   @@index([licenseNumber])
+}
+
+model UserTeamPlayer {
+  id           String     @id @default(cuid())
+  userId       String
+  teamPlayerId String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  teamPlayer   TeamPlayer @relation(fields: [teamPlayerId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamPlayerId])
+  @@index([userId])
+  @@index([teamPlayerId])
 }

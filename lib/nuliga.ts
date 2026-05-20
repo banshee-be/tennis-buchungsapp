@@ -15,13 +15,17 @@ type TeamLink = {
 type ParsedPlayer = {
   rank?: number;
   position?: string;
+  teamPosition?: string;
   lk?: string;
   nuLigaId?: string;
   firstName: string;
   lastName: string;
   fullName: string;
   birthYear?: number;
+  nation?: string;
   licenseNumber?: string;
+  info?: string;
+  msg?: string;
   isCaptain: boolean;
   sourceUrl: string;
   rawData: Prisma.InputJsonObject;
@@ -33,6 +37,9 @@ export type NuLigaImportSummary = {
   lastImportedAt?: string | null;
   importedTeams: number;
   importedPlayers: number;
+  createdPlayers?: number;
+  updatedPlayers?: number;
+  skippedPlayers?: number;
   warnings: string[];
   teams: {
     id?: string;
@@ -61,6 +68,9 @@ export async function getNuLigaSummary(db: PrismaClient = prisma): Promise<NuLig
     lastImportedAt: lastImportedAt ? new Date(lastImportedAt).toISOString() : null,
     importedTeams: teams.length,
     importedPlayers: teams.reduce((sum, team) => sum + team.players.length, 0),
+    createdPlayers: 0,
+    updatedPlayers: 0,
+    skippedPlayers: 0,
     warnings: [],
     teams: teams.map((team) => ({
       id: team.id,
@@ -91,6 +101,9 @@ export async function importNuLigaClubData(db: PrismaClient = prisma): Promise<N
 
   const importedTeams: NuLigaImportSummary["teams"] = [];
   let importedPlayers = 0;
+  let createdPlayers = 0;
+  let updatedPlayers = 0;
+  let skippedPlayers = 0;
 
   for (const link of teamLinks) {
     try {
@@ -132,36 +145,46 @@ export async function importNuLigaClubData(db: PrismaClient = prisma): Promise<N
       });
 
       for (const player of players) {
+        const importKey = makeImportKey(team.id, player);
+        const exists = await db.teamPlayer.findUnique({ where: { importKey }, select: { id: true } });
         await db.teamPlayer.upsert({
-          where: { importKey: makeImportKey(team.id, player) },
+          where: { importKey },
           create: {
             teamId: team.id,
             rank: player.rank,
             position: player.position,
+            teamPosition: player.teamPosition,
             lk: player.lk,
             nuLigaId: player.nuLigaId,
             firstName: player.firstName,
             lastName: player.lastName,
             fullName: player.fullName,
             birthYear: player.birthYear,
+            nation: player.nation,
             licenseNumber: player.licenseNumber,
+            info: player.info,
+            msg: player.msg,
             isCaptain: player.isCaptain,
             isActive: true,
             sourceUrl: player.sourceUrl,
-            importKey: makeImportKey(team.id, player),
+            importKey,
             rawData: player.rawData,
             lastImportedAt: now
           },
           update: {
             rank: player.rank,
             position: player.position,
+            teamPosition: player.teamPosition,
             lk: player.lk,
             nuLigaId: player.nuLigaId,
             firstName: player.firstName,
             lastName: player.lastName,
             fullName: player.fullName,
             birthYear: player.birthYear,
+            nation: player.nation,
             licenseNumber: player.licenseNumber,
+            info: player.info,
+            msg: player.msg,
             isCaptain: player.isCaptain,
             isActive: true,
             sourceUrl: player.sourceUrl,
@@ -169,7 +192,13 @@ export async function importNuLigaClubData(db: PrismaClient = prisma): Promise<N
             lastImportedAt: now
           }
         });
+        if (exists) {
+          updatedPlayers += 1;
+        } else {
+          createdPlayers += 1;
+        }
       }
+      skippedPlayers += Math.max(0, players.length - new Set(players.map((player) => makeImportKey(team.id, player))).size);
 
       importedPlayers += players.length;
       importedTeams.push({
@@ -203,6 +232,9 @@ export async function importNuLigaClubData(db: PrismaClient = prisma): Promise<N
     lastImportedAt: lastImportedAt ? new Date(lastImportedAt).toISOString() : null,
     importedTeams: importedTeams.length,
     importedPlayers,
+    createdPlayers,
+    updatedPlayers,
+    skippedPlayers,
     warnings,
     teams: importedTeams
   };
@@ -320,17 +352,24 @@ function parsePlayerCells($: cheerio.CheerioAPI, row: Element, cells: string[], 
       .map((cell) => cell.match(/^\d{5,}$/)?.[0] ?? "")
       .find(Boolean) ?? numericCells.find((value) => value !== nuLigaId);
   const href = $(row).find("a[href]").first().attr("href") ?? "";
+  const nation = cells[nameIndex + 1] && !/^\d{5,}$/.test(cells[nameIndex + 1]) ? cells[nameIndex + 1] : undefined;
+  const info = cells.at(-3) && !/^(MSG|MF)$/i.test(cells.at(-3) ?? "") ? cells.at(-3) : undefined;
+  const msg = cells.find((cell) => /^MSG$/i.test(cell));
 
   return {
     rank,
     position,
+    teamPosition: position,
     lk,
     nuLigaId: nuLigaId ?? href.match(/[?&](?:person|spieler|id)=([^&]+)/i)?.[1],
     firstName: name.firstName,
     lastName: name.lastName,
     fullName: name.fullName,
     birthYear,
+    nation,
     licenseNumber,
+    info,
+    msg,
     isCaptain: /\bMF\b|Mannschaftsf(?:ü|ue)hrer/i.test(rowText),
     sourceUrl,
     rawData: { cells, rowText, href }
@@ -351,6 +390,7 @@ function parsePlayersFromText(text: string, sourceUrl: string) {
     players.push({
       rank: Number(rank),
       position,
+      teamPosition: position,
       lk: normalizeText(lk),
       nuLigaId,
       firstName: cleanFirstName,
@@ -358,6 +398,7 @@ function parsePlayersFromText(text: string, sourceUrl: string) {
       fullName: `${cleanFirstName} ${cleanLastName}`,
       birthYear: Number(birthYear),
       licenseNumber,
+      msg: /\bMSG\b/i.test(flags) ? "MSG" : undefined,
       isCaptain: /\bMF\b/i.test(flags),
       sourceUrl,
       rawData: { source: "text-fallback", line: match[0].trim(), flags }
@@ -401,10 +442,10 @@ function splitName(value: string) {
 
 function makeImportKey(teamId: string, player: ParsedPlayer) {
   if (player.nuLigaId) {
-    return `nuliga:${player.nuLigaId}`;
+    return `team:${teamId}:nuliga:${player.nuLigaId}`;
   }
   if (player.licenseNumber) {
-    return `license:${player.licenseNumber}`;
+    return `team:${teamId}:license:${player.licenseNumber}`;
   }
   return `team:${teamId}:${slug(player.fullName)}:${player.birthYear ?? "unknown"}`;
 }

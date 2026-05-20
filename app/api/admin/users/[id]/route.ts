@@ -28,6 +28,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
           memberNumber?: string | null;
           phoneNumber?: string | null;
           teamPlayerId?: string | null;
+          teamPlayerIds?: string[];
           contractType?: (typeof contractTypes)[number];
           contractStartDate?: string | null;
           contractEndDate?: string | null;
@@ -98,6 +99,21 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         role: body.role
       }
     });
+
+    if (body.teamPlayerIds) {
+      const uniqueIds = Array.from(new Set(body.teamPlayerIds.filter(Boolean)));
+      await prisma.userTeamPlayer.deleteMany({ where: { userId: id } });
+      if (uniqueIds.length) {
+        await prisma.userTeamPlayer.createMany({
+          data: uniqueIds.map((teamPlayerId) => ({ userId: id, teamPlayerId })),
+          skipDuplicates: true
+        });
+      }
+      await prisma.user.update({
+        where: { id },
+        data: { teamPlayerId: uniqueIds[0] ?? null }
+      });
+    }
 
     return NextResponse.json({ user });
   });

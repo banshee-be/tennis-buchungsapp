@@ -38,8 +38,34 @@ export async function GET() {
           select: {
             id: true,
             fullName: true,
+            lk: true,
+            nuLigaId: true,
+            licenseNumber: true,
+            birthYear: true,
+            isCaptain: true,
             team: {
               select: { name: true, season: true }
+            }
+          }
+        },
+        teamPlayerLinks: {
+          select: {
+            teamPlayer: {
+              select: {
+                id: true,
+                fullName: true,
+                lk: true,
+                nuLigaId: true,
+                licenseNumber: true,
+                birthYear: true,
+                nation: true,
+                rank: true,
+                teamPosition: true,
+                msg: true,
+                info: true,
+                isCaptain: true,
+                team: { select: { name: true, season: true } }
+              }
             }
           }
         },
@@ -61,8 +87,19 @@ export async function GET() {
         licenseNumber: true,
         isCaptain: true,
         rank: true,
+        teamPosition: true,
+        lk: true,
+        nuLigaId: true,
+        nation: true,
+        info: true,
+        msg: true,
         team: {
           select: { name: true, season: true }
+        },
+        userLinks: {
+          select: {
+            user: { select: { id: true, name: true, email: true } }
+          }
         }
       }
     });
@@ -70,6 +107,7 @@ export async function GET() {
     return NextResponse.json({
       users: users.map((user) => ({
         ...user,
+        teamPlayers: user.teamPlayerLinks.map((link) => link.teamPlayer),
         bookingCount: user.bookings.length,
         contractStartDate: user.contractStartDate?.toISOString() ?? null,
         contractEndDate: user.contractEndDate?.toISOString() ?? null,
@@ -78,7 +116,8 @@ export async function GET() {
         lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
-        bookings: undefined
+        bookings: undefined,
+        teamPlayerLinks: undefined
       })),
       teamPlayers
     });

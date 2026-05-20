@@ -26,7 +26,8 @@ export async function GET() {
       orderBy: { name: "asc" },
       include: {
         bookings: { where: { status: { in: ["PENDING", "CONFIRMED"] }, endTime: { gt: new Date() } }, select: { id: true } },
-        teamPlayer: { include: { team: true } }
+        teamPlayer: { include: { team: true } },
+        teamPlayerLinks: { include: { teamPlayer: { include: { team: true } } } }
       }
     });
 
@@ -59,7 +60,13 @@ export async function GET() {
         "Letzte Änderung",
         "Aktiv/Inaktiv"
       ],
-      ...users.map((user) => [
+      ...users.map((user) => {
+        const linkedPlayers = user.teamPlayerLinks.length
+          ? user.teamPlayerLinks.map((link) => link.teamPlayer)
+          : user.teamPlayer
+            ? [user.teamPlayer]
+            : [];
+        return [
         user.name,
         user.email,
         user.phoneNumber ?? "",
@@ -77,16 +84,17 @@ export async function GET() {
         keyLabels[user.keyType],
         user.keyIssuedAt?.toISOString().slice(0, 10) ?? "",
         user.keyReturnedAt?.toISOString().slice(0, 10) ?? "",
-        user.teamPlayer?.team.name ?? "",
-        user.teamPlayer?.fullName ?? "",
-        user.teamPlayer?.nuLigaId ?? "",
-        user.teamPlayer?.licenseNumber ?? "",
-        user.teamPlayer?.isCaptain ? "Ja" : "Nein",
+        Array.from(new Set(linkedPlayers.map((player) => player.team.name))).join("; "),
+        linkedPlayers.map((player) => player.fullName).join("; "),
+        linkedPlayers.map((player) => player.nuLigaId ?? "").filter(Boolean).join("; "),
+        linkedPlayers.map((player) => player.licenseNumber ?? "").filter(Boolean).join("; "),
+        linkedPlayers.some((player) => player.isCaptain) ? "Ja" : "Nein",
         user.bookings.length,
         user.createdAt.toISOString(),
         user.updatedAt.toISOString(),
         user.isActive ? "Aktiv" : "Inaktiv"
-      ])
+        ];
+      })
     ]);
 
     const date = new Date().toISOString().slice(0, 10);

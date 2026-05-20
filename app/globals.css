@@ -987,6 +987,69 @@ textarea:focus {
   background: #fffdf7;
 }
 
+.team-roster-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fbfcfb;
+}
+
+.team-chip-row,
+.detail-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-chip,
+.detail-tabs button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--green-dark);
+  font-weight: 800;
+}
+
+.team-chip.active,
+.detail-tabs button.active {
+  border-color: var(--green-dark);
+  background: var(--green-dark);
+  color: white;
+}
+
+.team-player-table {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.team-player-head,
+.team-player-row {
+  display: grid;
+  grid-template-columns: 54px minmax(160px, 1.4fr) 76px 88px 130px 120px minmax(160px, 1fr) 56px minmax(150px, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 1040px;
+}
+
+.team-player-head {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.team-player-row {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 0.86rem;
+}
+
 .member-table {
   display: grid;
   gap: 8px;
@@ -1075,6 +1138,18 @@ textarea:focus {
   border-radius: 18px;
   background: var(--surface);
   box-shadow: var(--shadow-strong);
+}
+
+.linked-player-list {
+  display: grid;
+  gap: 8px;
+}
+
+.linked-player-card {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
 }
 
 .detail-section {

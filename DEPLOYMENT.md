@@ -421,6 +421,7 @@ Technisch wichtig:
 - Der Import läuft serverseitig über `/api/admin/nuliga/import`.
 - Die Route ist nur für Admins nutzbar.
 - Importierte Spieler werden als `TeamPlayer` gespeichert.
+- Ein App-Nutzer kann über `UserTeamPlayer` mit mehreren nuLiga-Spielerprofilen verknüpft werden, falls eine Person in mehreren Mannschaften spielt.
 - Ein importierter nuLiga-Spieler ist noch kein bestätigter App-Nutzer.
 - Registrierte Nutzer können im Adminbereich manuell mit einem nuLiga-Spieler verknüpft werden.
 - Die Mitgliedsfreigabe bleibt eine bewusste Admin-Aktion.
@@ -483,6 +484,7 @@ Sicherheits- und Datenschutzregeln:
 - Nicht exportiert werden Passwort-Hashes, Reset-Tokens, Sessions, technische Secrets, Stripe-Daten, Bankdaten, SEPA-Daten, IBAN oder BIC.
 - Neue per CSV importierte Nutzer erhalten kein Passwort. Sie können später über „Passwort vergessen“ ein Passwort setzen.
 - Adminrechte aus CSV werden nicht automatisch übernommen; Adminrechte sollten manuell vergeben werden.
+- Normale Nutzer sehen keine internen Vertrags-, Schlüssel- oder Adminnotizen.
 
 ## Production-Check vom 2026-05-03
 

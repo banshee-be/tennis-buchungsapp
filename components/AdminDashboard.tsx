@@ -44,10 +44,18 @@ type User = {
   teamPlayer?: {
     id: string;
     fullName: string;
+    lk?: string | null;
+    nuLigaId?: string | null;
+    licenseNumber?: string | null;
+    birthYear?: number | null;
+    isCaptain?: boolean;
     team?: { name: string; season?: string | null } | null;
   } | null;
+  teamPlayers?: TeamPlayerOption[];
   bookingCount: number;
 };
+
+type UserDraft = Partial<User> & { teamPlayerIds?: string[] };
 
 type ImportPreview = {
   rows: unknown[];
@@ -68,9 +76,16 @@ type TeamPlayerOption = {
   lastName: string;
   birthYear?: number | null;
   licenseNumber?: string | null;
+  nuLigaId?: string | null;
+  nation?: string | null;
+  lk?: string | null;
+  info?: string | null;
+  msg?: string | null;
   isCaptain: boolean;
   rank?: number | null;
+  teamPosition?: string | null;
   team?: { name: string; season?: string | null } | null;
+  userLinks?: { user: { id: string; name: string; email: string } }[];
 };
 
 type NuLigaSummary = {
@@ -79,6 +94,9 @@ type NuLigaSummary = {
   lastImportedAt?: string | null;
   importedTeams: number;
   importedPlayers: number;
+  createdPlayers?: number;
+  updatedPlayers?: number;
+  skippedPlayers?: number;
   warnings: string[];
   teams: {
     id?: string;
@@ -121,6 +139,8 @@ type Block = {
 
 const tabs = ["Buchungen", "Nutzer", "Preise & Zeiten", "Plätze & Sperren"] as const;
 type Tab = (typeof tabs)[number];
+type DetailTab = "Übersicht" | "Vertrag" | "Schlüssel" | "nuLiga" | "Buchungen" | "Notizen";
+const detailTabs: DetailTab[] = ["Übersicht", "Vertrag", "Schlüssel", "nuLiga", "Buchungen", "Notizen"];
 
 const contractOptions: Record<ContractType, { label: string; shortLabel: string; feeCents: number | null; workHours?: number; hint?: string }> = {
   FULL_MEMBER: { label: "Vollmitglied", shortLabel: "Vollmitglied", feeCents: 12000, workHours: 6 },
@@ -200,6 +220,19 @@ function membershipLabel(user: User) {
   return "Bestätigt";
 }
 
+function linkedTeamPlayers(user: User) {
+  const linked = user.teamPlayers?.length ? user.teamPlayers : user.teamPlayer ? [user.teamPlayer as TeamPlayerOption] : [];
+  return linked;
+}
+
+function teamSummary(user: User) {
+  const linked = linkedTeamPlayers(user);
+  if (!linked.length) {
+    return "Ohne Mannschaft";
+  }
+  return Array.from(new Set(linked.map((player) => `${player.team?.name ?? "nuLiga"}${player.isCaptain ? " · MF" : ""}`))).join(", ");
+}
+
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -217,8 +250,10 @@ export function AdminDashboard() {
   const [memberFilter, setMemberFilter] = useState<"ALL" | "PENDING" | "VERIFIED_MEMBER" | "EXTERNAL" | "REJECTED">("ALL");
   const [teamFilter, setTeamFilter] = useState<"ALL" | "NONE" | "POSSIBLE" | "LINKED" | string>("ALL");
   const [roleFilter, setRoleFilter] = useState<"ALL" | "USER" | "ADMIN">("ALL");
+  const [teamRosterFilter, setTeamRosterFilter] = useState("Alle");
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [userDraft, setUserDraft] = useState<Partial<User>>({});
+  const [userDraft, setUserDraft] = useState<UserDraft>({});
+  const [detailTab, setDetailTab] = useState<DetailTab>("Übersicht");
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importingCsv, setImportingCsv] = useState(false);
   const [message, setMessage] = useState("");
@@ -266,11 +301,15 @@ export function AdminDashboard() {
   const possibleTeamPlayerMatch = useCallback(
     (user: User) => {
       const userName = normalizeMatchName(user.name);
+      const userParts = userName.split(" ").filter(Boolean);
+      const reversedName = userParts.length > 1 ? [...userParts].reverse().join(" ") : userName;
       const memberNumber = user.memberNumber?.trim();
 
       return teamPlayers.find((player) => {
-        const nameMatches = normalizeMatchName(player.fullName) === userName;
-        const numberMatches = memberNumber && player.licenseNumber === memberNumber;
+        const playerName = normalizeMatchName(player.fullName);
+        const playerReversed = normalizeMatchName(`${player.lastName} ${player.firstName}`);
+        const nameMatches = playerName === userName || playerName === reversedName || playerReversed === userName;
+        const numberMatches = memberNumber && (player.licenseNumber === memberNumber || player.nuLigaId === memberNumber);
         return Boolean(numberMatches || nameMatches);
       });
     },
@@ -297,10 +336,11 @@ export function AdminDashboard() {
           (memberFilter === "REJECTED" && user.membershipStatus === "REJECTED");
         const teamMatches =
           teamFilter === "ALL" ||
-          (teamFilter === "NONE" && !user.teamPlayer) ||
-          (teamFilter === "POSSIBLE" && !user.teamPlayer && Boolean(possibleMatch)) ||
-          (teamFilter === "LINKED" && Boolean(user.teamPlayer)) ||
-          user.teamPlayer?.team?.name === teamFilter;
+          (teamFilter === "NONE" && !linkedTeamPlayers(user).length) ||
+          (teamFilter === "POSSIBLE" && !linkedTeamPlayers(user).length && Boolean(possibleMatch)) ||
+          (teamFilter === "LINKED" && Boolean(linkedTeamPlayers(user).length)) ||
+          (teamFilter === "CAPTAIN" && linkedTeamPlayers(user).some((player) => player.isCaptain)) ||
+          linkedTeamPlayers(user).some((player) => player.team?.name === teamFilter);
         const roleMatches = roleFilter === "ALL" || user.role === roleFilter;
 
         return searchMatches && contractMatches && keyMatches && memberMatches && teamMatches && roleMatches;
@@ -312,6 +352,13 @@ export function AdminDashboard() {
     () => Array.from(new Set(teamPlayers.map((player) => player.team?.name).filter(Boolean))) as string[],
     [teamPlayers]
   );
+
+  const rosterPlayers = useMemo(() => {
+    if (teamRosterFilter === "Alle") return teamPlayers;
+    if (teamRosterFilter === "Ohne Mannschaft") return [];
+    if (teamRosterFilter === "Mannschaftsführer") return teamPlayers.filter((player) => player.isCaptain);
+    return teamPlayers.filter((player) => player.team?.name === teamRosterFilter);
+  }, [teamPlayers, teamRosterFilter]);
 
   async function loadAdminData() {
     setLoading(true);
@@ -411,7 +458,7 @@ export function AdminDashboard() {
     await loadAdminData();
   }
 
-  async function updateUser(user: User, patch: Partial<User>) {
+  async function updateUser(user: User, patch: UserDraft) {
     const response = await fetch(`/api/admin/users/${user.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -468,10 +515,11 @@ export function AdminDashboard() {
 
   function openUserPanel(user: User) {
     setEditingUser(user);
-    setUserDraft({ ...user });
+    setUserDraft({ ...user, teamPlayerIds: linkedTeamPlayers(user).map((player) => player.id) } as Partial<User> & { teamPlayerIds: string[] });
+    setDetailTab("Übersicht");
   }
 
-  function updateDraft(patch: Partial<User>) {
+  function updateDraft(patch: UserDraft) {
     setUserDraft((current) => ({ ...current, ...patch }));
   }
 
@@ -739,6 +787,9 @@ export function AdminDashboard() {
               <small>
                 Saison: {nuligaSummary?.season ?? "noch unbekannt"} · Letzter Import:{" "}
                 {formatDateTimeLocal(nuligaSummary?.lastImportedAt)}
+                {nuligaSummary?.createdPlayers || nuligaSummary?.updatedPlayers || nuligaSummary?.skippedPlayers
+                  ? ` · neu ${nuligaSummary.createdPlayers ?? 0}, aktualisiert ${nuligaSummary.updatedPlayers ?? 0}, übersprungen ${nuligaSummary.skippedPlayers ?? 0}`
+                  : ""}
               </small>
             </div>
             <button className="button primary" disabled={nuligaImporting} onClick={importNuLigaData} type="button">
@@ -758,6 +809,56 @@ export function AdminDashboard() {
               {nuligaSummary.warnings.length ? <small>Hinweis: {nuligaSummary.warnings.join(" ")}</small> : null}
             </div>
           ) : null}
+
+          <section className="team-roster-panel">
+            <div className="section-heading-row">
+              <h3>Mannschaften</h3>
+              <small>{rosterPlayers.length} Spieler in der Auswahl</small>
+            </div>
+            <div className="team-chip-row">
+              {["Alle", ...availableTeamNames, "Ohne Mannschaft", "Mannschaftsführer"].map((teamName) => (
+                <button
+                  className={teamRosterFilter === teamName ? "team-chip active" : "team-chip"}
+                  key={teamName}
+                  onClick={() => setTeamRosterFilter(teamName)}
+                  type="button"
+                >
+                  {teamName}
+                </button>
+              ))}
+            </div>
+            {teamRosterFilter !== "Ohne Mannschaft" ? (
+              <div className="team-player-table">
+                <div className="team-player-head">
+                  <span>Rang</span>
+                  <span>Name</span>
+                  <span>LK</span>
+                  <span>Jahrgang</span>
+                  <span>Lizenznummer</span>
+                  <span>ID-Nummer</span>
+                  <span>Mannschaft</span>
+                  <span>MF</span>
+                  <span>Verknüpfter Nutzer</span>
+                </div>
+                {rosterPlayers.map((player) => (
+                  <div className="team-player-row" key={player.id}>
+                    <span>{player.rank ?? "-"}</span>
+                    <strong>{player.fullName}</strong>
+                    <span>{player.lk ?? "-"}</span>
+                    <span>{player.birthYear ?? "-"}</span>
+                    <span>{player.licenseNumber ?? "-"}</span>
+                    <span>{player.nuLigaId ?? "-"}</span>
+                    <span>
+                      {player.team?.name ?? "-"}
+                      {player.teamPosition ? ` · ${player.teamPosition}` : ""}
+                    </span>
+                    <span>{player.isCaptain ? "Ja" : "Nein"}</span>
+                    <span>{player.userLinks?.map((link) => link.user.name).join(", ") || "-"}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </section>
 
           <div className="admin-actions-bar">
             <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/export"; }} type="button">
@@ -833,6 +934,7 @@ export function AdminDashboard() {
                 <option value="NONE">Ohne Mannschaft</option>
                 <option value="POSSIBLE">Möglicher nuLiga-Treffer</option>
                 <option value="LINKED">Verknüpft</option>
+                <option value="CAPTAIN">Mannschaftsführer</option>
                 {availableTeamNames.map((teamName) => (
                   <option value={teamName} key={teamName}>
                     {teamName}
@@ -864,7 +966,8 @@ export function AdminDashboard() {
               const possibleMatch = possibleTeamPlayerMatch(user);
               const contract = contractOptions[user.contractType];
               const requiredHours = contractWorkHours(user);
-              const teamText = user.teamPlayer?.team?.name ?? (possibleMatch ? "Möglicher nuLiga-Treffer" : "Ohne Mannschaft");
+              const linkedPlayers = linkedTeamPlayers(user);
+              const teamText = linkedPlayers.length ? teamSummary(user) : possibleMatch ? "Möglicher nuLiga-Treffer" : "Ohne Mannschaft";
 
               return (
                 <article className="member-table-row" key={user.id}>
@@ -880,9 +983,8 @@ export function AdminDashboard() {
                     {requiredHours ? ` · ${requiredHours} Arbeitsstunden` : ""}
                   </span>
                   <span className={`status-badge ${user.hasKey ? "linked" : "neutral"}`}>{keyOptions[user.keyType]}</span>
-                  <span className={`status-badge ${user.teamPlayer ? "linked" : possibleMatch ? "pending" : "neutral"}`}>
+                  <span className={`status-badge ${linkedPlayers.length ? "linked" : possibleMatch ? "pending" : "neutral"}`}>
                     {teamText}
-                    {user.teamPlayer && possibleMatch?.isCaptain ? " · Mannschaftsführer" : ""}
                   </span>
                   <span>{user.bookingCount} Buchungen</span>
                   <div className="compact-actions">
@@ -1128,6 +1230,16 @@ export function AdminDashboard() {
               </button>
             </div>
 
+            <div className="detail-tabs">
+              {detailTabs.map((tab) => (
+                <button className={detailTab === tab ? "active" : ""} key={tab} onClick={() => setDetailTab(tab)} type="button">
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {detailTab === "Übersicht" ? (
+            <>
             <section className="detail-section">
               <h3>Stammdaten</h3>
               <div className="form-row">
@@ -1189,8 +1301,15 @@ export function AdminDashboard() {
                 <input checked={userDraft.isActive ?? true} onChange={(event) => updateDraft({ isActive: event.target.checked })} type="checkbox" />
                 Aktiv
               </label>
+              <small>
+                Zusammenfassung: {contractOptions[userDraft.contractType ?? "NONE"].shortLabel} · {keyOptions[userDraft.keyType ?? "NONE"]} ·{" "}
+                {teamSummary({ ...editingUser, ...userDraft } as User)}
+              </small>
             </section>
+            </>
+            ) : null}
 
+            {detailTab === "Vertrag" ? (
             <section className="detail-section">
               <h3>Vertragsstatus</h3>
               <div className="form-row">
@@ -1260,7 +1379,9 @@ export function AdminDashboard() {
                 <textarea value={userDraft.contractNote ?? ""} onChange={(event) => updateDraft({ contractNote: event.target.value || null })} />
               </label>
             </section>
+            ) : null}
 
+            {detailTab === "Schlüssel" ? (
             <section className="detail-section">
               <h3>Schlüssel</h3>
               <div className="form-row">
@@ -1288,7 +1409,9 @@ export function AdminDashboard() {
                 <textarea value={userDraft.keyNote ?? ""} onChange={(event) => updateDraft({ keyNote: event.target.value || null })} />
               </label>
             </section>
+            ) : null}
 
+            {detailTab === "nuLiga" ? (
             <section className="detail-section">
               <h3>nuLiga / Mannschaft</h3>
               {possibleTeamPlayerMatch(editingUser) ? (
@@ -1297,9 +1420,14 @@ export function AdminDashboard() {
                 </small>
               ) : null}
               <label>
-                Verknüpfter nuLiga-Spieler
-                <select value={userDraft.teamPlayerId ?? editingUser.teamPlayer?.id ?? ""} onChange={(event) => updateDraft({ teamPlayerId: event.target.value || null })}>
-                  <option value="">Keine Verknüpfung</option>
+                Verknüpfte nuLiga-Spielerprofile
+                <select
+                  multiple
+                  value={userDraft.teamPlayerIds ?? linkedTeamPlayers(editingUser).map((player) => player.id)}
+                  onChange={(event) =>
+                    updateDraft({ teamPlayerIds: Array.from(event.currentTarget.selectedOptions).map((option) => option.value) })
+                  }
+                >
                   {teamPlayers.map((player) => (
                     <option value={player.id} key={player.id}>
                       {player.fullName} · {player.team?.name ?? "nuLiga"}{player.isCaptain ? " · Mannschaftsführer" : ""}
@@ -1307,11 +1435,36 @@ export function AdminDashboard() {
                   ))}
                 </select>
               </label>
+              <div className="linked-player-list">
+                {(userDraft.teamPlayerIds ?? linkedTeamPlayers(editingUser).map((player) => player.id)).map((id) => {
+                  const player = teamPlayers.find((entry) => entry.id === id);
+                  return player ? (
+                    <div className="linked-player-card" key={id}>
+                      <strong>{player.fullName}</strong>
+                      <small>
+                        {player.team?.name} · Rang {player.rank ?? "-"} · Position {player.teamPosition ?? "-"} · {player.lk ?? "-"} · ID{" "}
+                        {player.nuLigaId ?? "-"} · Lizenz {player.licenseNumber ?? "-"} · Jahrgang {player.birthYear ?? "-"}
+                        {player.nation ? ` · Nation ${player.nation}` : ""}
+                        {player.isCaptain ? " · Mannschaftsführer" : ""}
+                      </small>
+                    </div>
+                  ) : null;
+                })}
+              </div>
               <div className="row-actions">
-                <button className="ghost-button" onClick={() => updateDraft({ teamPlayerId: possibleTeamPlayerMatch(editingUser)?.id ?? null })} type="button">
+                <button
+                  className="ghost-button"
+                  onClick={() => {
+                    const match = possibleTeamPlayerMatch(editingUser);
+                    if (match) {
+                      updateDraft({ teamPlayerIds: Array.from(new Set([...(userDraft.teamPlayerIds ?? []), match.id])) });
+                    }
+                  }}
+                  type="button"
+                >
                   Mit nuLiga-Spieler verknüpfen
                 </button>
-                <button className="ghost-button danger" onClick={() => updateDraft({ teamPlayerId: null })} type="button">
+                <button className="ghost-button danger" onClick={() => updateDraft({ teamPlayerIds: [] })} type="button">
                   Verknüpfung lösen
                 </button>
                 <button className="ghost-button" onClick={() => updateDraft({ membershipType: "MEMBER", membershipStatus: "VERIFIED" })} type="button">
@@ -1319,16 +1472,21 @@ export function AdminDashboard() {
                 </button>
               </div>
             </section>
+            ) : null}
 
+            {detailTab === "Buchungen" ? (
             <section className="detail-section">
               <h3>Buchungen</h3>
               <p>{editingUser.bookingCount} Buchungen insgesamt.</p>
             </section>
+            ) : null}
 
+            {detailTab === "Notizen" ? (
             <section className="detail-section">
               <h3>Adminnotiz</h3>
               <textarea value={userDraft.adminNote ?? ""} onChange={(event) => updateDraft({ adminNote: event.target.value || null })} />
             </section>
+            ) : null}
 
             <div className="detail-panel-actions">
               <button className="button primary" onClick={saveUserDraft} type="button">
