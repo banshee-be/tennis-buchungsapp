@@ -199,6 +199,10 @@ export function parseImportRows(text: string, existingKeys: Set<string>) {
       keyReturnedAt: get("Schlüsselrückgabe") || null
     });
 
+    if (get("Mannschaft").includes(";")) {
+      warnings.push(`Zeile ${line}: Mehrere Mannschaften erkannt. Die App-Nutzer-Verknüpfung erfolgt manuell im nuLiga-Tab.`);
+    }
+
     if (existingKeys.has(email) || (memberNumber && existingKeys.has(`member:${memberNumber}`))) {
       updateUsers += 1;
     } else {

@@ -233,6 +233,21 @@ function teamSummary(user: User) {
   return Array.from(new Set(linked.map((player) => `${player.team?.name ?? "nuLiga"}${player.isCaptain ? " · MF" : ""}`))).join(", ");
 }
 
+function possibleTeamPlayerMatches(user: User, teamPlayers: TeamPlayerOption[]) {
+  const userName = normalizeMatchName(user.name);
+  const userParts = userName.split(" ").filter(Boolean);
+  const reversedName = userParts.length > 1 ? [...userParts].reverse().join(" ") : userName;
+  const memberNumber = user.memberNumber?.trim();
+
+  return teamPlayers.filter((player) => {
+    const playerName = normalizeMatchName(player.fullName);
+    const playerReversed = normalizeMatchName(`${player.lastName} ${player.firstName}`);
+    const nameMatches = playerName === userName || playerName === reversedName || playerReversed === userName;
+    const numberMatches = memberNumber && (player.licenseNumber === memberNumber || player.nuLigaId === memberNumber);
+    return Boolean(numberMatches || nameMatches);
+  });
+}
+
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -299,20 +314,7 @@ export function AdminDashboard() {
   }, [settingsForm]);
 
   const possibleTeamPlayerMatch = useCallback(
-    (user: User) => {
-      const userName = normalizeMatchName(user.name);
-      const userParts = userName.split(" ").filter(Boolean);
-      const reversedName = userParts.length > 1 ? [...userParts].reverse().join(" ") : userName;
-      const memberNumber = user.memberNumber?.trim();
-
-      return teamPlayers.find((player) => {
-        const playerName = normalizeMatchName(player.fullName);
-        const playerReversed = normalizeMatchName(`${player.lastName} ${player.firstName}`);
-        const nameMatches = playerName === userName || playerName === reversedName || playerReversed === userName;
-        const numberMatches = memberNumber && (player.licenseNumber === memberNumber || player.nuLigaId === memberNumber);
-        return Boolean(numberMatches || nameMatches);
-      });
-    },
+    (user: User) => possibleTeamPlayerMatches(user, teamPlayers)[0],
     [teamPlayers]
   );
 
@@ -953,50 +955,76 @@ export function AdminDashboard() {
           </div>
 
           <div className="member-table">
+            <div className="section-heading-row registered-users-heading">
+              <h3>Registrierte Nutzer</h3>
+              <span>{filteredUsers.length} von {users.length} Nutzern</span>
+            </div>
             <div className="member-table-head">
               <span>Name</span>
-              <span>Status</span>
+              <span>Mitgliedsstatus</span>
+              <span>Kontotyp</span>
               <span>Vertrag</span>
               <span>Schlüssel</span>
-              <span>Mannschaft</span>
+              <span>Mannschaft(en)</span>
+              <span>nuLiga</span>
               <span>Buchungen</span>
+              <span>Registriert</span>
               <span>Aktionen</span>
             </div>
             {filteredUsers.map((user) => {
-              const possibleMatch = possibleTeamPlayerMatch(user);
+              const possibleMatches = possibleTeamPlayerMatches(user, teamPlayers);
               const contract = contractOptions[user.contractType];
               const requiredHours = contractWorkHours(user);
               const linkedPlayers = linkedTeamPlayers(user);
-              const teamText = linkedPlayers.length ? teamSummary(user) : possibleMatch ? "Möglicher nuLiga-Treffer" : "Ohne Mannschaft";
+              const teamNames = linkedPlayers.length
+                ? Array.from(new Map(linkedPlayers.map((player) => [player.team?.name ?? "nuLiga", player])).values())
+                : [];
+              const nuLigaStatus = linkedPlayers.length ? "Verknüpft" : possibleMatches.length ? `${possibleMatches.length} Treffer prüfen` : "Nicht verknüpft";
 
               return (
                 <article className="member-table-row" key={user.id}>
-                  <div>
+                  <div className="member-name-cell">
                     <strong>{user.name}</strong>
                     <small>{user.email}</small>
                   </div>
                   <span className={`status-badge ${user.membershipStatus.toLowerCase()} ${user.membershipType.toLowerCase()}`}>
                     {membershipLabel(user)}
                   </span>
+                  <span className={`status-badge ${user.membershipType.toLowerCase()}`}>{user.membershipType === "MEMBER" ? "Mitglied" : "Gastspieler"}</span>
                   <span className={`status-badge contract-${user.contractType.toLowerCase().replaceAll("_", "-")}`}>
-                    {contract.shortLabel} · {euroLabel(contractFee(user))}
-                    {requiredHours ? ` · ${requiredHours} Arbeitsstunden` : ""}
+                    <strong>{contract.shortLabel}</strong>
+                    <small>
+                      {euroLabel(contractFee(user))}
+                      {requiredHours ? ` · ${requiredHours} Arbeitsstunden` : ""}
+                    </small>
                   </span>
                   <span className={`status-badge ${user.hasKey ? "linked" : "neutral"}`}>{keyOptions[user.keyType]}</span>
-                  <span className={`status-badge ${linkedPlayers.length ? "linked" : possibleMatch ? "pending" : "neutral"}`}>
-                    {teamText}
+                  <span className="chip-list">
+                    {teamNames.length ? (
+                      teamNames.map((player) => (
+                        <span className="mini-chip team" key={`${user.id}-${player.team?.name}`}>
+                          {player.team?.name ?? "nuLiga"}{player.isCaptain ? " · MF" : ""}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="mini-chip neutral">Ohne Mannschaft</span>
+                    )}
                   </span>
-                  <span>{user.bookingCount} Buchungen</span>
-                  <div className="compact-actions">
+                  <span className={`status-badge ${linkedPlayers.length ? "linked" : possibleMatches.length ? "pending" : "neutral"}`}>{nuLigaStatus}</span>
+                  <span>{user.bookingCount} aktiv</span>
+                  <span>
+                    {user.lastLoginAt ? `Login ${dateInputValue(user.lastLoginAt)}` : `Registriert ${dateInputValue(user.createdAt)}`}
+                  </span>
+                  <div className="compact-actions quiet-actions">
                     {user.membershipStatus === "PENDING" && user.membershipType === "MEMBER" ? (
                       <button className="ghost-button" onClick={() => updateUser(user, { membershipStatus: "VERIFIED" })} type="button">
                         Bestätigen
                       </button>
                     ) : null}
-                    <button className="ghost-button" onClick={() => openUserPanel(user)} type="button">
+                    <button className="table-action-button" onClick={() => openUserPanel(user)} type="button">
                       Details
                     </button>
-                    <button className="button primary" onClick={() => openUserPanel(user)} type="button">
+                    <button className="table-action-button primary" onClick={() => openUserPanel(user)} type="button">
                       Bearbeiten
                     </button>
                   </div>

@@ -1055,11 +1055,25 @@ textarea:focus {
   gap: 8px;
 }
 
+.registered-users-heading {
+  margin-top: 8px;
+}
+
 .member-table-head,
 .member-table-row {
   display: grid;
-  grid-template-columns: minmax(190px, 1.4fr) minmax(130px, 1fr) minmax(170px, 1.25fr) minmax(150px, 1fr) minmax(150px, 1fr) 90px minmax(190px, 1fr);
-  gap: 10px;
+  grid-template-columns:
+    minmax(160px, 1.4fr)
+    minmax(120px, 0.85fr)
+    minmax(92px, 0.7fr)
+    minmax(145px, 1fr)
+    minmax(130px, 0.9fr)
+    minmax(145px, 1fr)
+    minmax(118px, 0.85fr)
+    76px
+    minmax(110px, 0.8fr)
+    minmax(142px, 0.9fr);
+  gap: 8px;
   align-items: center;
 }
 
@@ -1071,9 +1085,9 @@ textarea:focus {
 }
 
 .member-table-row {
-  padding: 12px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: 10px;
   background: var(--surface);
 }
 
@@ -1083,16 +1097,26 @@ textarea:focus {
   color: var(--muted);
 }
 
+.member-name-cell strong {
+  display: block;
+  line-height: 1.2;
+}
+
 .status-badge {
   width: fit-content;
   max-width: 100%;
-  padding: 5px 9px;
+  padding: 4px 8px;
   border-radius: 999px;
   background: #eef0ef;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 800;
   line-height: 1.25;
+}
+
+.status-badge small {
+  margin: 1px 0 0;
+  font-weight: 700;
 }
 
 .status-badge.verified,
@@ -1115,7 +1139,55 @@ textarea:focus {
 .compact-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
+}
+
+.quiet-actions {
+  justify-content: flex-end;
+}
+
+.table-action-button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf8;
+  color: var(--green-dark);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.table-action-button.primary {
+  border-color: var(--green-dark);
+  background: var(--green-dark);
+  color: white;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.mini-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #eef0ef;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.mini-chip.team {
+  background: #e7f0fb;
+  color: #245078;
+}
+
+.mini-chip.neutral {
+  background: #eef0ef;
 }
 
 .admin-modal-backdrop {
