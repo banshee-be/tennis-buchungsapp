@@ -108,6 +108,43 @@ type NuLigaSummary = {
   }[];
 };
 
+type NuLigaMatchSummary = {
+  sourceUrl: string;
+  lastImportedAt?: string | null;
+  importedTeams: number;
+  importedMatches: number;
+  homeMatches: number;
+  proposedBlocks: number;
+  createdBlocks: number;
+  needsReview: number;
+  warnings: string[];
+  teams: {
+    id: string;
+    name: string;
+    season?: string | null;
+    matchCount: number;
+    homeMatchCount: number;
+  }[];
+  matches: {
+    id: string;
+    teamName: string;
+    season?: string | null;
+    date: string;
+    startTime: string;
+    endTime?: string | null;
+    homeTeam: string;
+    awayTeam: string;
+    opponent?: string | null;
+    isHomeMatch: boolean;
+    league?: string | null;
+    groupName?: string | null;
+    blockStatus: "NONE" | "PROPOSED" | "CREATED" | "SKIPPED" | "NEEDS_REVIEW" | string;
+    importStatus: string;
+    blockId?: string | null;
+    sourceUrl: string;
+  }[];
+};
+
 type Court = {
   id: number;
   name: string;
@@ -125,6 +162,11 @@ type Settings = {
   maxActiveBookingsPerUser: number;
   maxAdvanceBookingDaysMember: number;
   maxAdvanceBookingDaysGuest: number;
+  matchBlockDurationHours: number;
+  matchBlockDefaultStartTime: string;
+  matchBlockCourtIds: string;
+  matchBlockBufferBeforeMinutes: number;
+  matchBlockBufferAfterMinutes: number;
   cancellationRules: string;
 };
 
@@ -267,6 +309,23 @@ function filterToTeamChip(filter: string) {
   return filter;
 }
 
+function blockStatusLabel(status: string) {
+  const labels: Record<string, string> = {
+    NONE: "Keine Sperre",
+    PROPOSED: "Sperre vorgeschlagen",
+    CREATED: "Sperre erstellt",
+    SKIPPED: "Übersprungen",
+    NEEDS_REVIEW: "Prüfen"
+  };
+  return labels[status] ?? status;
+}
+
+function formatDateLocal(value: string) {
+  return new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(
+    new Date(value)
+  );
+}
+
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -278,6 +337,9 @@ export function AdminDashboard() {
   const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Record<string, string>>({});
   const [nuligaSummary, setNuLigaSummary] = useState<NuLigaSummary | null>(null);
   const [nuligaImporting, setNuLigaImporting] = useState(false);
+  const [nuligaMatchSummary, setNuLigaMatchSummary] = useState<NuLigaMatchSummary | null>(null);
+  const [nuligaMatchesImporting, setNuLigaMatchesImporting] = useState(false);
+  const [nuligaBlocksCreating, setNuLigaBlocksCreating] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [contractFilter, setContractFilter] = useState<ContractType | "ALL">("ALL");
   const [keyFilter, setKeyFilter] = useState<KeyType | "ALL" | "WITH_KEY" | "WITHOUT_KEY">("ALL");
@@ -322,6 +384,11 @@ export function AdminDashboard() {
       maxActiveBookingsPerUser: String(settings?.maxActiveBookingsPerUser ?? 3),
       maxAdvanceBookingDaysMember: String(settings?.maxAdvanceBookingDaysMember ?? 7),
       maxAdvanceBookingDaysGuest: String(settings?.maxAdvanceBookingDaysGuest ?? 3),
+      matchBlockDurationHours: String(settings?.matchBlockDurationHours ?? 6),
+      matchBlockDefaultStartTime: settings?.matchBlockDefaultStartTime ?? "09:00",
+      matchBlockCourtIds: settings?.matchBlockCourtIds ?? "1,2,3,4",
+      matchBlockBufferBeforeMinutes: String(settings?.matchBlockBufferBeforeMinutes ?? 0),
+      matchBlockBufferAfterMinutes: String(settings?.matchBlockBufferAfterMinutes ?? 30),
       cancellationRules: settings?.cancellationRules ?? ""
     }),
     [settings]
@@ -401,9 +468,11 @@ export function AdminDashboard() {
       fetch("/api/admin/courts", { cache: "no-store" }),
       fetch("/api/admin/blocks", { cache: "no-store" }),
       fetch("/api/admin/settings", { cache: "no-store" }),
-      fetch("/api/admin/nuliga/import", { cache: "no-store" })
+      fetch("/api/admin/nuliga/import", { cache: "no-store" }),
+      fetch("/api/admin/nuliga/matches", { cache: "no-store" })
     ];
-    const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse, nuligaResponse] = await Promise.all(endpoints);
+    const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse, nuligaResponse, nuligaMatchesResponse] =
+      await Promise.all(endpoints);
 
     if (!bookingsResponse.ok) {
       const data = await bookingsResponse.json().catch(() => ({}));
@@ -427,6 +496,7 @@ export function AdminDashboard() {
     setBlocks(blocksData.blocks);
     setSettings(settingsData.settings);
     setNuLigaSummary(nuligaResponse.ok ? await nuligaResponse.json() : null);
+    setNuLigaMatchSummary(nuligaMatchesResponse.ok ? await nuligaMatchesResponse.json() : null);
     setLoading(false);
   }
 
@@ -521,6 +591,57 @@ export function AdminDashboard() {
 
     setNuLigaSummary(data);
     setMessage(`Import abgeschlossen: ${data.importedTeams} Mannschaften, ${data.importedPlayers} Spieler.`);
+    await loadAdminData();
+  }
+
+  async function importNuLigaMatchesData() {
+    setNuLigaMatchesImporting(true);
+    setMessage("nuLiga-Spieltage werden importiert...");
+    const response = await fetch("/api/admin/nuliga/import-matches", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    setNuLigaMatchesImporting(false);
+
+    if (!response.ok) {
+      setMessage(data.error ?? "Spieltermine konnten nicht importiert werden.");
+      return;
+    }
+
+    setNuLigaMatchSummary(data);
+    setMessage(
+      `Spieltermine importiert: ${data.importedMatches} Begegnungen, ${data.homeMatches} Heimspiele, ${data.proposedBlocks} Sperren vorgeschlagen.`
+    );
+    await loadAdminData();
+  }
+
+  async function createMatchBlock(matchId: string, action?: "skip") {
+    const response = await fetch(`/api/admin/nuliga/matches/${matchId}/create-block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(action ? { action } : {})
+    });
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setMessage(data.error ?? "Platzsperre konnte nicht erstellt werden.");
+      return;
+    }
+
+    setMessage(action === "skip" ? "Spieltermin übersprungen." : "Platzsperre für Heimspiel erstellt.");
+    await loadAdminData();
+  }
+
+  async function createAllMatchBlocks() {
+    setNuLigaBlocksCreating(true);
+    const response = await fetch("/api/admin/nuliga/matches/create-blocks", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    setNuLigaBlocksCreating(false);
+
+    if (!response.ok) {
+      setMessage(data.error ?? "Platzsperren konnten nicht erstellt werden.");
+      return;
+    }
+
+    setMessage(`Heimspiel-Sperren erstellt: ${data.created ?? 0}${data.warnings?.length ? ` · Hinweise: ${data.warnings.join(" ")}` : ""}`);
     await loadAdminData();
   }
 
@@ -619,6 +740,11 @@ export function AdminDashboard() {
         maxActiveBookingsPerUser: Number(editableSettings.maxActiveBookingsPerUser),
         maxAdvanceBookingDaysMember: Number(editableSettings.maxAdvanceBookingDaysMember),
         maxAdvanceBookingDaysGuest: Number(editableSettings.maxAdvanceBookingDaysGuest),
+        matchBlockDurationHours: Number(editableSettings.matchBlockDurationHours),
+        matchBlockDefaultStartTime: editableSettings.matchBlockDefaultStartTime,
+        matchBlockCourtIds: editableSettings.matchBlockCourtIds,
+        matchBlockBufferBeforeMinutes: Number(editableSettings.matchBlockBufferBeforeMinutes),
+        matchBlockBufferAfterMinutes: Number(editableSettings.matchBlockBufferAfterMinutes),
         cancellationRules: editableSettings.cancellationRules
       })
     });
@@ -840,6 +966,91 @@ export function AdminDashboard() {
               </div>
               {nuligaSummary.warnings.length ? <small>Hinweis: {nuligaSummary.warnings.join(" ")}</small> : null}
             </div>
+          ) : null}
+
+          <section className="admin-import-card match-import-card">
+            <div>
+              <p className="eyebrow">nuLiga Spieltage</p>
+              <h3>
+                {nuligaMatchSummary?.importedMatches ?? 0} Begegnungen · {nuligaMatchSummary?.homeMatches ?? 0} Heimspiele
+              </h3>
+              <p>
+                {nuligaMatchSummary?.proposedBlocks ?? 0} Sperren vorgeschlagen · {nuligaMatchSummary?.createdBlocks ?? 0} Sperren erstellt ·{" "}
+                {nuligaMatchSummary?.needsReview ?? 0} Termine prüfen
+              </p>
+              <small>Letzter Import: {formatDateTimeLocal(nuligaMatchSummary?.lastImportedAt)}</small>
+            </div>
+            <div className="row-actions">
+              <button className="button primary" disabled={nuligaMatchesImporting} onClick={importNuLigaMatchesData} type="button">
+                {nuligaMatchesImporting ? "Import läuft..." : "Spieltage importieren"}
+              </button>
+              <button
+                className="ghost-button"
+                disabled={nuligaBlocksCreating || !nuligaMatchSummary?.proposedBlocks}
+                onClick={createAllMatchBlocks}
+                type="button"
+              >
+                Alle Heimspiel-Sperren erstellen
+              </button>
+            </div>
+          </section>
+
+          {nuligaMatchSummary ? (
+            <section className="team-roster-panel">
+              <div className="section-heading-row">
+                <h3>Importierte Spieltage</h3>
+                <small>
+                  {nuligaMatchSummary.importedTeams} Mannschaften · {nuligaMatchSummary.importedMatches} Begegnungen
+                </small>
+              </div>
+              <div className="team-summary-grid">
+                {nuligaMatchSummary.teams.map((team) => (
+                  <span key={team.id}>
+                    {team.name}: {team.matchCount} Spiele{team.homeMatchCount ? `, ${team.homeMatchCount} Heimspiele` : ""}
+                  </span>
+                ))}
+              </div>
+              {nuligaMatchSummary.warnings.length ? <small>Hinweis: {nuligaMatchSummary.warnings.join(" ")}</small> : null}
+              <div className="match-table">
+                <div className="match-table-head">
+                  <span>Datum</span>
+                  <span>Uhrzeit</span>
+                  <span>Mannschaft</span>
+                  <span>Gegner</span>
+                  <span>Ort</span>
+                  <span>Status</span>
+                  <span>Aktion</span>
+                </div>
+                {nuligaMatchSummary.matches.slice(0, 80).map((match) => (
+                  <div className="match-table-row" key={match.id}>
+                    <span>{formatDateLocal(match.startTime)}</span>
+                    <span>{match.startTime.slice(11, 16)} Uhr</span>
+                    <span>{match.teamName}</span>
+                    <span>{match.opponent ?? "-"}</span>
+                    <span>{match.isHomeMatch ? "Heimspiel" : "Auswärts"}</span>
+                    <span className={`status-badge block-${match.blockStatus.toLowerCase().replaceAll("_", "-")}`}>
+                      {blockStatusLabel(match.blockStatus)}
+                    </span>
+                    <span className="compact-actions">
+                      {match.isHomeMatch && match.blockStatus === "PROPOSED" ? (
+                        <>
+                          <button className="table-action-button primary" onClick={() => createMatchBlock(match.id)} type="button">
+                            Sperre erstellen
+                          </button>
+                          <button className="table-action-button" onClick={() => createMatchBlock(match.id, "skip")} type="button">
+                            Überspringen
+                          </button>
+                        </>
+                      ) : (
+                        <a className="table-action-button" href={match.sourceUrl} target="_blank" rel="noreferrer">
+                          Details
+                        </a>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
           ) : null}
 
           <section className="team-roster-panel">
@@ -1169,6 +1380,55 @@ export function AdminDashboard() {
                 min="1"
                 value={editableSettings.maxAdvanceBookingDaysGuest}
                 onChange={(event) => setEditableSettings({ ...editableSettings, maxAdvanceBookingDaysGuest: event.target.value })}
+              />
+            </label>
+          </div>
+          <h3>Heimspiel-Sperren aus nuLiga</h3>
+          <div className="form-row">
+            <label>
+              Standarddauer in Stunden
+              <input
+                type="number"
+                min="1"
+                max="12"
+                value={editableSettings.matchBlockDurationHours}
+                onChange={(event) => setEditableSettings({ ...editableSettings, matchBlockDurationHours: event.target.value })}
+              />
+            </label>
+            <label>
+              Standard-Startzeit
+              <input
+                type="time"
+                value={editableSettings.matchBlockDefaultStartTime}
+                onChange={(event) => setEditableSettings({ ...editableSettings, matchBlockDefaultStartTime: event.target.value })}
+              />
+            </label>
+            <label>
+              Zu sperrende Plätze
+              <input
+                placeholder="1,2,3,4"
+                value={editableSettings.matchBlockCourtIds}
+                onChange={(event) => setEditableSettings({ ...editableSettings, matchBlockCourtIds: event.target.value })}
+              />
+            </label>
+          </div>
+          <div className="form-row">
+            <label>
+              Puffer vor Spielbeginn in Minuten
+              <input
+                type="number"
+                min="0"
+                value={editableSettings.matchBlockBufferBeforeMinutes}
+                onChange={(event) => setEditableSettings({ ...editableSettings, matchBlockBufferBeforeMinutes: event.target.value })}
+              />
+            </label>
+            <label>
+              Puffer nach Spielende in Minuten
+              <input
+                type="number"
+                min="0"
+                value={editableSettings.matchBlockBufferAfterMinutes}
+                onChange={(event) => setEditableSettings({ ...editableSettings, matchBlockBufferAfterMinutes: event.target.value })}
               />
             </label>
           </div>

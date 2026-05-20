@@ -129,6 +129,11 @@ model Settings {
   maxActiveBookingsPerUser  Int      @default(3)
   maxAdvanceBookingDaysMember Int    @default(7)
   maxAdvanceBookingDaysGuest  Int    @default(3)
+  matchBlockDurationHours     Int    @default(6)
+  matchBlockDefaultStartTime  String @default("09:00")
+  matchBlockCourtIds          String @default("1,2,3,4")
+  matchBlockBufferBeforeMinutes Int  @default(0)
+  matchBlockBufferAfterMinutes  Int  @default(30)
   cancellationRules         String   @default("Kostenfreie Stornierung bis 24 Stunden vor Spielbeginn.")
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
@@ -171,9 +176,38 @@ model Team {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   players        TeamPlayer[]
+  matches        TeamMatch[]
 
   @@unique([source, sourceUrl])
   @@index([source, externalId])
+}
+
+model TeamMatch {
+  id           String   @id @default(cuid())
+  teamId       String
+  season       String?
+  date         DateTime
+  startTime    DateTime
+  endTime      DateTime?
+  homeTeam     String
+  awayTeam     String
+  opponent     String?
+  isHomeMatch  Boolean  @default(false)
+  venue        String?
+  league       String?
+  groupName    String?
+  sourceUrl    String
+  importKey    String   @unique
+  rawData      Json?
+  importStatus String   @default("IMPORTED")
+  blockStatus  String   @default("NONE")
+  blockId      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  team         Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@index([teamId, date])
+  @@index([isHomeMatch, blockStatus])
 }
 
 model TeamPlayer {

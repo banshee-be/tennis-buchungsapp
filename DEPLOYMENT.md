@@ -486,6 +486,18 @@ Sicherheits- und Datenschutzregeln:
 - Adminrechte aus CSV werden nicht automatisch übernommen; Adminrechte sollten manuell vergeben werden.
 - Normale Nutzer sehen keine internen Vertrags-, Schlüssel- oder Adminnotizen.
 
+## nuLiga-Spieltage und Platzsperren
+
+Der Adminbereich kann zusätzlich zu Mannschaften und Spielern öffentlich erreichbare nuLiga-Spielpläne importieren.
+
+- Quelle: `https://htv.liga.nu/cgi-bin/WebObjects/nuLigaTENDE.woa/wa/clubTeams?club=24835`
+- Importiert werden Mannschaft, Saison, Datum, Uhrzeit, Heimteam, Auswärtsteam, Gegner, Heimspielstatus, Gruppe/Liga und Quell-URL.
+- Heimspiele des TV Europabad Marbach werden als vorgeschlagene Platzsperren markiert.
+- Admins können vorgeschlagene Heimspiel-Sperren einzeln oder gesammelt erstellen.
+- Bestehende Buchungen werden nicht automatisch gelöscht oder überschrieben. Wenn im betroffenen Zeitraum Buchungen vorhanden sind, wird keine Sperre erstellt und der Termin muss geprüft werden.
+- Sperrregeln wie Dauer, Standard-Startzeit, Plätze und Pufferzeiten werden im Adminbereich unter „Preise & Zeiten“ gepflegt.
+- Der Verein sollte importierte Sperren vor Veröffentlichung prüfen, besonders bei MSG- oder uneindeutigen Heimspiel-Zuordnungen.
+
 ## Production-Check vom 2026-05-03
 
 Ausgefuehrt:

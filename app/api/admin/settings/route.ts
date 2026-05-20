@@ -26,6 +26,11 @@ export async function PATCH(request: NextRequest) {
           maxActiveBookingsPerUser?: number;
           maxAdvanceBookingDaysMember?: number;
           maxAdvanceBookingDaysGuest?: number;
+          matchBlockDurationHours?: number;
+          matchBlockDefaultStartTime?: string;
+          matchBlockCourtIds?: string;
+          matchBlockBufferBeforeMinutes?: number;
+          matchBlockBufferAfterMinutes?: number;
           cancellationRules?: string;
         }
       | null;
@@ -43,6 +48,11 @@ export async function PATCH(request: NextRequest) {
     const maxAdvanceBookingDaysMember = Number(body.maxAdvanceBookingDaysMember);
     const maxAdvanceBookingDaysGuest = Number(body.maxAdvanceBookingDaysGuest);
     const externalHourlyRateCents = Number(body.externalHourlyRateCents);
+    const matchBlockDurationHours = Number(body.matchBlockDurationHours);
+    const matchBlockDefaultStartTime = body.matchBlockDefaultStartTime?.trim() || "09:00";
+    const matchBlockCourtIds = body.matchBlockCourtIds?.trim() || "1,2,3,4";
+    const matchBlockBufferBeforeMinutes = Number(body.matchBlockBufferBeforeMinutes);
+    const matchBlockBufferAfterMinutes = Number(body.matchBlockBufferAfterMinutes);
 
     if (
       !Number.isInteger(openingHour) ||
@@ -79,6 +89,20 @@ export async function PATCH(request: NextRequest) {
       return jsonError("Der Preis darf nicht negativ sein.");
     }
 
+    if (
+      !Number.isInteger(matchBlockDurationHours) ||
+      matchBlockDurationHours < 1 ||
+      matchBlockDurationHours > 12 ||
+      !/^\d{2}:\d{2}$/.test(matchBlockDefaultStartTime) ||
+      !/^\d+(,\d+)*$/.test(matchBlockCourtIds.replace(/\s+/g, "")) ||
+      !Number.isInteger(matchBlockBufferBeforeMinutes) ||
+      matchBlockBufferBeforeMinutes < 0 ||
+      !Number.isInteger(matchBlockBufferAfterMinutes) ||
+      matchBlockBufferAfterMinutes < 0
+    ) {
+      return jsonError("Bitte gültige Regeln für Heimspiel-Sperren eintragen.");
+    }
+
     const settings = await prisma.settings.update({
       where: { id: "default" },
       data: {
@@ -91,6 +115,11 @@ export async function PATCH(request: NextRequest) {
         maxActiveBookingsPerUser,
         maxAdvanceBookingDaysMember,
         maxAdvanceBookingDaysGuest,
+        matchBlockDurationHours,
+        matchBlockDefaultStartTime,
+        matchBlockCourtIds: matchBlockCourtIds.replace(/\s+/g, ""),
+        matchBlockBufferBeforeMinutes,
+        matchBlockBufferAfterMinutes,
         cancellationRules: body.cancellationRules?.trim() || undefined
       }
     });

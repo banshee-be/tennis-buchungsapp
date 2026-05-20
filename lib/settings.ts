@@ -10,7 +10,12 @@ export async function getSettings() {
       cancellationDeadlineHours: 2,
       maxActiveBookingsPerUser: 3,
       maxAdvanceBookingDaysMember: 7,
-      maxAdvanceBookingDaysGuest: 3
+      maxAdvanceBookingDaysGuest: 3,
+      matchBlockDurationHours: 6,
+      matchBlockDefaultStartTime: "09:00",
+      matchBlockCourtIds: "1,2,3,4",
+      matchBlockBufferBeforeMinutes: 0,
+      matchBlockBufferAfterMinutes: 30
     }
   });
 }

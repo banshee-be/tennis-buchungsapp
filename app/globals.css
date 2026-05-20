@@ -1027,6 +1027,35 @@ textarea:focus {
   overflow-x: auto;
 }
 
+.match-table {
+  display: grid;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.match-table-head,
+.match-table-row {
+  display: grid;
+  grid-template-columns: 130px 82px minmax(130px, 1fr) minmax(150px, 1.2fr) 100px 130px minmax(150px, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-width: 920px;
+}
+
+.match-table-head {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.match-table-row {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: 0.86rem;
+}
+
 .team-player-head,
 .team-player-row {
   display: grid;
@@ -1134,6 +1163,23 @@ textarea:focus {
 .status-badge.rejected {
   background: var(--danger-soft);
   color: var(--danger);
+}
+
+.status-badge.block-proposed,
+.status-badge.block-needs-review {
+  background: #fff3d8;
+  color: #87540d;
+}
+
+.status-badge.block-created {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.status-badge.block-skipped,
+.status-badge.block-none {
+  background: #eef0ef;
+  color: var(--muted);
 }
 
 .compact-actions {
