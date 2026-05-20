@@ -253,6 +253,20 @@ function unlinkedPossibleMatches(user: User, teamPlayers: TeamPlayerOption[]) {
   return possibleTeamPlayerMatches(user, teamPlayers).filter((player) => !linkedIds.has(player.id));
 }
 
+function teamChipToFilter(teamName: string) {
+  if (teamName === "Alle") return "ALL";
+  if (teamName === "Ohne Mannschaft") return "NONE";
+  if (teamName === "Mannschaftsführer") return "CAPTAIN";
+  return teamName;
+}
+
+function filterToTeamChip(filter: string) {
+  if (filter === "ALL") return "Alle";
+  if (filter === "NONE") return "Ohne Mannschaft";
+  if (filter === "CAPTAIN") return "Mannschaftsführer";
+  return filter;
+}
+
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -367,6 +381,16 @@ export function AdminDashboard() {
     if (teamRosterFilter === "Mannschaftsführer") return teamPlayers.filter((player) => player.isCaptain);
     return teamPlayers.filter((player) => player.team?.name === teamRosterFilter);
   }, [teamPlayers, teamRosterFilter]);
+
+  function selectTeamFilter(value: string) {
+    setTeamFilter(value);
+    setTeamRosterFilter(filterToTeamChip(value));
+  }
+
+  function selectTeamChip(teamName: string) {
+    setTeamRosterFilter(teamName);
+    setTeamFilter(teamChipToFilter(teamName));
+  }
 
   async function loadAdminData() {
     setLoading(true);
@@ -820,15 +844,15 @@ export function AdminDashboard() {
 
           <section className="team-roster-panel">
             <div className="section-heading-row">
-              <h3>Mannschaften</h3>
-              <small>{rosterPlayers.length} Spieler in der Auswahl</small>
+              <h3>Mannschaften / nuLiga-Spieler</h3>
+              <small>{rosterPlayers.length} Spieler in der nuLiga-Auswahl</small>
             </div>
             <div className="team-chip-row">
               {["Alle", ...availableTeamNames, "Ohne Mannschaft", "Mannschaftsführer"].map((teamName) => (
                 <button
                   className={teamRosterFilter === teamName ? "team-chip active" : "team-chip"}
                   key={teamName}
-                  onClick={() => setTeamRosterFilter(teamName)}
+                  onClick={() => selectTeamChip(teamName)}
                   type="button"
                 >
                   {teamName}
@@ -937,7 +961,7 @@ export function AdminDashboard() {
             </label>
             <label>
               Mannschaft
-              <select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}>
+              <select value={teamFilter} onChange={(event) => selectTeamFilter(event.target.value)}>
                 <option value="ALL">Alle</option>
                 <option value="NONE">Ohne Mannschaft</option>
                 <option value="POSSIBLE">Möglicher nuLiga-Treffer</option>
