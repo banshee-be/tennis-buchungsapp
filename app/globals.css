@@ -1186,6 +1186,11 @@ textarea:focus {
   color: #245078;
 }
 
+.mini-chip.pending {
+  background: #fff3d8;
+  color: #87540d;
+}
+
 .mini-chip.neutral {
   background: #eef0ef;
 }
@@ -1222,6 +1227,15 @@ textarea:focus {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
+}
+
+.possible-match-box {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #f0cda0;
+  border-radius: 10px;
+  background: #fffdf7;
 }
 
 .detail-section {

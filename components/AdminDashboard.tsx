@@ -248,6 +248,11 @@ function possibleTeamPlayerMatches(user: User, teamPlayers: TeamPlayerOption[]) 
   });
 }
 
+function unlinkedPossibleMatches(user: User, teamPlayers: TeamPlayerOption[]) {
+  const linkedIds = new Set(linkedTeamPlayers(user).map((player) => player.id));
+  return possibleTeamPlayerMatches(user, teamPlayers).filter((player) => !linkedIds.has(player.id));
+}
+
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -322,6 +327,7 @@ export function AdminDashboard() {
     () =>
       users.filter((user) => {
         const possibleMatch = possibleTeamPlayerMatch(user);
+        const unlinkedMatches = unlinkedPossibleMatches(user, teamPlayers);
         const query = normalizeMatchName(searchTerm);
         const searchMatches = !query || normalizeMatchName(`${user.name} ${user.email}`).includes(query);
         const contractMatches = contractFilter === "ALL" || user.contractType === contractFilter;
@@ -339,7 +345,7 @@ export function AdminDashboard() {
         const teamMatches =
           teamFilter === "ALL" ||
           (teamFilter === "NONE" && !linkedTeamPlayers(user).length) ||
-          (teamFilter === "POSSIBLE" && !linkedTeamPlayers(user).length && Boolean(possibleMatch)) ||
+          (teamFilter === "POSSIBLE" && Boolean(unlinkedMatches.length || (!linkedTeamPlayers(user).length && possibleMatch))) ||
           (teamFilter === "LINKED" && Boolean(linkedTeamPlayers(user).length)) ||
           (teamFilter === "CAPTAIN" && linkedTeamPlayers(user).some((player) => player.isCaptain)) ||
           linkedTeamPlayers(user).some((player) => player.team?.name === teamFilter);
@@ -347,7 +353,7 @@ export function AdminDashboard() {
 
         return searchMatches && contractMatches && keyMatches && memberMatches && teamMatches && roleMatches;
       }),
-    [contractFilter, keyFilter, memberFilter, possibleTeamPlayerMatch, roleFilter, searchTerm, teamFilter, users]
+    [contractFilter, keyFilter, memberFilter, possibleTeamPlayerMatch, roleFilter, searchTerm, teamFilter, teamPlayers, users]
   );
 
   const availableTeamNames = useMemo(
@@ -972,14 +978,20 @@ export function AdminDashboard() {
               <span>Aktionen</span>
             </div>
             {filteredUsers.map((user) => {
-              const possibleMatches = possibleTeamPlayerMatches(user, teamPlayers);
+              const possibleMatches = unlinkedPossibleMatches(user, teamPlayers);
               const contract = contractOptions[user.contractType];
               const requiredHours = contractWorkHours(user);
               const linkedPlayers = linkedTeamPlayers(user);
               const teamNames = linkedPlayers.length
                 ? Array.from(new Map(linkedPlayers.map((player) => [player.team?.name ?? "nuLiga", player])).values())
                 : [];
-              const nuLigaStatus = linkedPlayers.length ? "Verknüpft" : possibleMatches.length ? `${possibleMatches.length} Treffer prüfen` : "Nicht verknüpft";
+              const nuLigaStatus = linkedPlayers.length
+                ? possibleMatches.length
+                  ? `Verknüpft · ${possibleMatches.length} weiterer Treffer`
+                  : "Verknüpft"
+                : possibleMatches.length
+                  ? `${possibleMatches.length} Treffer prüfen`
+                  : "Nicht verknüpft";
 
               return (
                 <article className="member-table-row" key={user.id}>
@@ -1000,12 +1012,19 @@ export function AdminDashboard() {
                   </span>
                   <span className={`status-badge ${user.hasKey ? "linked" : "neutral"}`}>{keyOptions[user.keyType]}</span>
                   <span className="chip-list">
-                    {teamNames.length ? (
-                      teamNames.map((player) => (
+                    {teamNames.length || possibleMatches.length ? (
+                      <>
+                      {teamNames.map((player) => (
                         <span className="mini-chip team" key={`${user.id}-${player.team?.name}`}>
                           {player.team?.name ?? "nuLiga"}{player.isCaptain ? " · MF" : ""}
                         </span>
-                      ))
+                      ))}
+                      {possibleMatches.map((player) => (
+                        <span className="mini-chip pending" key={`${user.id}-possible-${player.id}`}>
+                          {player.team?.name ?? "nuLiga"} · Treffer{player.isCaptain ? " · MF" : ""}
+                        </span>
+                      ))}
+                      </>
                     ) : (
                       <span className="mini-chip neutral">Ohne Mannschaft</span>
                     )}
@@ -1442,10 +1461,30 @@ export function AdminDashboard() {
             {detailTab === "nuLiga" ? (
             <section className="detail-section">
               <h3>nuLiga / Mannschaft</h3>
-              {possibleTeamPlayerMatch(editingUser) ? (
-                <small>
-                  Möglicher nuLiga-Treffer: {possibleTeamPlayerMatch(editingUser)?.fullName} · {possibleTeamPlayerMatch(editingUser)?.team?.name}
-                </small>
+              {unlinkedPossibleMatches(editingUser, teamPlayers).length ? (
+                <div className="possible-match-box">
+                  <strong>{unlinkedPossibleMatches(editingUser, teamPlayers).length} weitere mögliche nuLiga-Treffer</strong>
+                  <div className="chip-list">
+                    {unlinkedPossibleMatches(editingUser, teamPlayers).map((player) => (
+                      <span className="mini-chip pending" key={player.id}>
+                        {player.fullName} · {player.team?.name}{player.isCaptain ? " · MF" : ""}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    className="ghost-button"
+                    onClick={() =>
+                      updateDraft({
+                        teamPlayerIds: Array.from(
+                          new Set([...(userDraft.teamPlayerIds ?? linkedTeamPlayers(editingUser).map((player) => player.id)), ...unlinkedPossibleMatches(editingUser, teamPlayers).map((player) => player.id)])
+                        )
+                      })
+                    }
+                    type="button"
+                  >
+                    Alle Treffer übernehmen
+                  </button>
+                </div>
               ) : null}
               <label>
                 Verknüpfte nuLiga-Spielerprofile
