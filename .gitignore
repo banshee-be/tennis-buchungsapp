@@ -7,3 +7,5 @@ dist
 .env.production
 .DS_Store
 tsconfig.tsbuildinfo
+.vercel
+.env.local
