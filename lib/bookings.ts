@@ -3,6 +3,21 @@ import { prisma } from "@/lib/prisma";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
+export function paymentConfirmationDecision(
+  booking: Pick<Booking, "status" | "paymentStatus" | "expiresAt">,
+  now = new Date()
+) {
+  if (booking.status === "CONFIRMED" && booking.paymentStatus === "PAID") {
+    return "ALREADY_CONFIRMED" as const;
+  }
+
+  if (booking.status !== "PENDING" || (booking.expiresAt && booking.expiresAt <= now)) {
+    return "REFUND" as const;
+  }
+
+  return "CONFIRM" as const;
+}
+
 export async function releaseExpiredPendingBookings(db: Db) {
   const now = new Date();
   const expired = await db.booking.findMany({
@@ -150,15 +165,36 @@ export async function assertUserCanCancelBooking(
   }
 }
 
-export async function confirmPaidBooking(bookingId: string, providerPaymentId?: string | null) {
+export async function confirmPaidBooking(
+  bookingId: string,
+  providerPaymentId?: string | null,
+  paidAmount?: { amountCents: number; currency: string }
+) {
   return prisma.$transaction(async (tx) => {
     const booking = await tx.booking.findUnique({
       where: { id: bookingId },
       include: { payment: true }
     });
 
-    if (!booking || booking.status !== "PENDING") {
+    if (!booking) {
+      return null;
+    }
+
+    const decision = paymentConfirmationDecision(booking);
+
+    if (decision === "ALREADY_CONFIRMED") {
       return booking;
+    }
+
+    if (decision === "REFUND" || !booking.payment) {
+      return booking;
+    }
+
+    if (
+      paidAmount &&
+      (booking.payment.amountCents !== paidAmount.amountCents || booking.payment.currency.toLowerCase() !== paidAmount.currency.toLowerCase())
+    ) {
+      throw new Error("Der von PayPal bestätigte Betrag stimmt nicht mit der Buchung überein.");
     }
 
     await tx.payment.update({
@@ -176,6 +212,21 @@ export async function confirmPaidBooking(bookingId: string, providerPaymentId?: 
         paymentStatus: "PAID",
         expiresAt: null
       }
+    });
+  });
+}
+
+export async function markBookingRefunded(bookingId: string, providerRefundId: string, reason: string) {
+  return prisma.$transaction(async (tx) => {
+    await tx.bookingSlot.deleteMany({ where: { bookingId } });
+    await tx.payment.update({
+      where: { bookingId },
+      data: { status: "REFUNDED", providerRefundId, refundedAt: new Date() }
+    });
+
+    return tx.booking.update({
+      where: { id: bookingId },
+      data: { status: "CANCELLED", paymentStatus: "REFUNDED", cancelReason: reason, expiresAt: null }
     });
   });
 }
@@ -208,12 +259,24 @@ export function serializeBooking(
       membershipType?: string;
       membershipStatus?: string;
       memberNumber?: string | null;
-    };
+    } | null;
     court?: { name: string };
   }
 ) {
   return {
     ...booking,
+    user:
+      booking.user ??
+      (booking.guestName && booking.guestEmail
+        ? {
+            name: booking.guestName,
+            email: booking.guestEmail,
+            role: "GUEST",
+            membershipType: "EXTERNAL",
+            membershipStatus: "VERIFIED",
+            memberNumber: null
+          }
+        : null),
     startTime: booking.startTime.toISOString(),
     endTime: booking.endTime.toISOString(),
     expiresAt: booking.expiresAt?.toISOString() ?? null,

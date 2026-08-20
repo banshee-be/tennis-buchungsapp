@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
 import { isVerifiedMember, requireAdmin } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
+import { refundPayPalBooking } from "@/lib/payment-processing";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
@@ -39,6 +40,14 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
     }
 
     if (body?.status === "CANCELLED") {
+      if (existing.paymentStatus === "PAID") {
+        const refunded = await refundPayPalBooking(id, "Vom Admin storniert und über PayPal zurückerstattet.");
+
+        if (refunded) {
+          return NextResponse.json({ booking: serializeBooking(refunded) });
+        }
+      }
+
       const cancelled = await prisma.$transaction((tx) => cancelBooking(tx, id, "Vom Admin storniert."));
       return NextResponse.json({ booking: serializeBooking(cancelled) });
     }

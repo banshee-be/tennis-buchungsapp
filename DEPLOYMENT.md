@@ -27,7 +27,7 @@ Die App ist keine rein statische HTML-Seite. Sie nutzt:
 - Login/Session-Cookies
 - Prisma-Datenbankzugriffe
 - Buchungs- und Admin-APIs
-- Zahlungslogik mit Stripe bzw. Demo-Modus
+- Zahlungslogik mit PayPal Orders v2 und Webhooks
 - serverseitige Pruefung gegen Doppelbuchungen
 
 Damit wird ein laufender Server benoetigt. Ein klassischer FTP-Webspace, der nur HTML/CSS/JS/PHP-Dateien ausliefert, kann die Next.js-API-Routes und Prisma-Logik nicht ausfuehren.
@@ -70,8 +70,8 @@ https://buchung.tveuropabad-marbach.de
 Vorteile:
 
 - volle Next.js-Funktionalitaet
-- Login, Buchungen, Admin und Stripe funktionieren sauber
-- kein iFrame-Problem mit Cookies, Hoehe oder Stripe
+- Login, Buchungen, Admin und PayPal funktionieren sauber
+- kein iFrame-Problem mit Cookies, Hoehe oder PayPal
 - klare Trennung zwischen Website und Buchungssystem
 - einfacher spaeterer Betrieb, Monitoring und Backup
 
@@ -96,7 +96,7 @@ Nachteile:
 
 - Login-Cookies koennen je nach Browser/Datenschutzeinstellung schwieriger sein
 - Mobile Hoehe ist schwer perfekt zu steuern
-- Stripe Checkout sollte besser nicht in einem iFrame laufen
+- PayPal Checkout sollte besser nicht in einem iFrame laufen
 - Browser-Zurueck-Button und Scrollverhalten sind weniger sauber
 - WordPress darf iFrames je nach Rolle/Editor-Einstellung filtern
 
@@ -113,7 +113,7 @@ Ausserdem muss der Hosting-Provider iFrame-Einbettung erlauben, also keine block
 
 **Nicht empfohlen, ausser als iFrame-Wrapper.**
 
-Ein echtes WordPress-Plugin wuerde bedeuten, dass Login, Buchungslogik, Datenbankmodell, Adminbereich und Stripe-Integration in PHP/WordPress neu implementiert werden. Das waere ein eigenes Projekt.
+Ein echtes WordPress-Plugin wuerde bedeuten, dass Login, Buchungslogik, Datenbankmodell, Adminbereich und PayPal-Integration in PHP/WordPress neu implementiert werden. Das waere ein eigenes Projekt.
 
 Realistisch waere nur ein kleiner WordPress-Shortcode, der ein iFrame ausgibt. Die eigentliche App muesste trotzdem separat laufen.
 
@@ -273,18 +273,22 @@ Fuer Neon/Vercel:
 DATABASE_URL=postgresql://USER:PASSWORD@HOST/neondb?sslmode=require
 ```
 
-Stripe fuer echte Gastspieler-Zahlungen:
+PayPal Sandbox fuer Testzahlungen:
 
 ```env
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_DEMO_MODE=false
+PAYPAL_ENVIRONMENT=sandbox
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
 ```
 
-Nur fuer Demo/Test:
+Fuer den Livebetrieb werden Zugangsdaten einer separaten Live-App verwendet:
 
 ```env
-STRIPE_DEMO_MODE=true
+PAYPAL_ENVIRONMENT=live
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
 ```
 
 Bei iFrame-Einbettung:
@@ -306,35 +310,39 @@ Ein iFrame ist nur optional und weniger robust. Mögliche Probleme:
 - Cookies und Session Handling im eingebetteten Kontext
 - `SameSite`-Cookie-Verhalten je nach Browser
 - Mobile Höhe und Scrollverhalten im WordPress-Layout
-- Stripe Checkout sollte besser außerhalb eines iFrames laufen
+- PayPal Checkout sollte besser außerhalb eines iFrames laufen
 - CORS/CSP- oder Hosting-Header können Einbettung blockieren
 
 Die App setzt Session-Cookies standardmäßig mit `SameSite=Lax`; in Production werden Cookies sicher (`Secure`) gesetzt. Für iFrame-Tests kann `EMBEDDED_COOKIE_MODE=true` genutzt werden, stabiler ist aber der direkte Link auf die Subdomain.
 
-## Stripe und Zahlungsstatus
+## PayPal und Zahlungsstatus
 
-Für lokale Tests kann Demo-Modus genutzt werden:
+Für Entwicklung und Abnahmetests wird die PayPal Sandbox genutzt:
 
 ```env
-STRIPE_DEMO_MODE=true
+PAYPAL_ENVIRONMENT=sandbox
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
 ```
 
 Für den Livebetrieb:
 
 ```env
-STRIPE_DEMO_MODE=false
-STRIPE_SECRET_KEY=sk_live_...
-STRIPE_WEBHOOK_SECRET=whsec_...
+PAYPAL_ENVIRONMENT=live
+PAYPAL_CLIENT_ID=...
+PAYPAL_CLIENT_SECRET=...
+PAYPAL_WEBHOOK_ID=...
 APP_URL=https://buchung.tveuropabad-marbach.de
 ```
 
-Stripe Webhook in Stripe konfigurieren:
+PayPal Webhook in der jeweiligen Sandbox- bzw. Live-App konfigurieren:
 
 ```text
-https://buchung.tveuropabad-marbach.de/api/payments/stripe-webhook
+https://buchung.tveuropabad-marbach.de/api/payments/paypal-webhook
 ```
 
-Wichtig: Externe Buchungen bleiben zunächst `PENDING` und werden erst durch den Stripe Webhook auf `CONFIRMED` gesetzt. Abgelaufene oder fehlgeschlagene Zahlungen werden storniert und geben den Slot wieder frei.
+Zu abonnierende Ereignisse: `CHECKOUT.ORDER.APPROVED`, `CHECKOUT.ORDER.VOIDED`, `PAYMENT.CAPTURE.COMPLETED` und `PAYMENT.CAPTURE.DENIED`. Die im Dashboard angezeigte Webhook-ID muss zur jeweiligen App passen. Externe Buchungen bleiben zunächst `PENDING` und werden erst nach serverseitig geprüftem Capture auf `CONFIRMED` gesetzt. Abgelaufene oder fehlgeschlagene Zahlungen geben den Slot frei; verspätete Zahlungen werden automatisch zurückerstattet.
 
 ## Rate Limiting
 
@@ -403,7 +411,7 @@ Grund:
 - API-Routes werden gebraucht
 - Datenbankzugriffe werden gebraucht
 - Login/Session wird gebraucht
-- Stripe/Webhook wird gebraucht
+- PayPal/Webhook wird gebraucht
 - Buchungen muessen serverseitig geprueft und gespeichert werden
 
 Es gibt daher keinen empfohlenen FTP-Upload-Ordner wie `out/` oder `dist/`.
@@ -481,7 +489,7 @@ Sicherheits- und Datenschutzregeln:
 - CSV-Import und CSV-Export sind nur für Admins verfügbar.
 - CSV-Dateien werden serverseitig geparst, aber nicht dauerhaft gespeichert.
 - Der Export enthält personenbezogene Verwaltungsdaten und muss vertraulich behandelt werden.
-- Nicht exportiert werden Passwort-Hashes, Reset-Tokens, Sessions, technische Secrets, Stripe-Daten, Bankdaten, SEPA-Daten, IBAN oder BIC.
+- Nicht exportiert werden Passwort-Hashes, Reset-Tokens, Sessions, technische Secrets, PayPal-Zahlungs-IDs, Bankdaten, SEPA-Daten, IBAN oder BIC.
 - Neue per CSV importierte Nutzer erhalten kein Passwort. Sie können später über „Passwort vergessen“ ein Passwort setzen.
 - Adminrechte aus CSV werden nicht automatisch übernommen; Adminrechte sollten manuell vergeben werden.
 - Normale Nutzer sehen keine internen Vertrags-, Schlüssel- oder Adminnotizen.
@@ -524,8 +532,8 @@ Hinweis:
 - Neon-`DATABASE_URL` in Vercel fuer Production und Preview setzen
 - PostgreSQL-Migrationen gegen Neon ausfuehren
 - Seed-Daten fuer die vier Plaetze einmalig einspielen, falls die Datenbank leer ist
-- echte Stripe-Live-Keys setzen
-- Stripe-Webhook auf `https://buchung.tveuropabad-marbach.de/api/payments/stripe-webhook` konfigurieren
+- PayPal-Live-App anlegen und echte Live-Zugangsdaten setzen
+- PayPal-Webhook auf `https://buchung.tveuropabad-marbach.de/api/payments/paypal-webhook` konfigurieren und dessen ID speichern
 - `AUTH_SECRET` als langen Zufallswert setzen
 - Admin-E-Mail-Adressen final setzen
 - Backups fuer Datenbank einrichten

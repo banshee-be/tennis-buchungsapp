@@ -70,7 +70,11 @@ model Court {
 
 model Booking {
   id               String        @id @default(cuid())
-  userId           String
+  userId           String?
+  guestName        String?
+  guestEmail       String?
+  guestPhone       String?
+  bookingCode      String?       @unique
   courtId          Int
   startTime        DateTime
   endTime          DateTime
@@ -80,9 +84,10 @@ model Booking {
   totalAmountCents Int           @default(0)
   expiresAt        DateTime?
   cancelReason     String?
+  confirmationEmailSentAt DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user             User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   court            Court         @relation(fields: [courtId], references: [id], onDelete: Restrict)
   slots            BookingSlot[]
   payment          Payment?
@@ -107,15 +112,25 @@ model BookingSlot {
 model Payment {
   id                String          @id @default(cuid())
   bookingId         String          @unique
-  provider          String          @default("stripe")
+  provider          String          @default("paypal")
   amountCents       Int
   currency          String          @default("eur")
   status            String          @default("PENDING")
-  providerPaymentId String?
-  providerSessionId String?
+  providerPaymentId String?         @unique
+  providerSessionId String?         @unique
+  providerRefundId  String?         @unique
+  refundedAt        DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   booking           Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+}
+
+model PaymentEvent {
+  id          String   @id @default(cuid())
+  provider    String   @default("paypal")
+  eventId     String   @unique
+  eventType   String
+  processedAt DateTime @default(now())
 }
 
 model Settings {

@@ -14,6 +14,17 @@ type RegistrationUser = {
   createdAt: Date;
 };
 
+type GuestBookingConfirmation = {
+  name: string;
+  email: string;
+  bookingCode: string;
+  courtName: string;
+  startTime: Date;
+  endTime: Date;
+  totalAmountCents: number;
+  cancellationUrl: string;
+};
+
 export function getPublicAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000";
 }
@@ -137,6 +148,46 @@ ${appUrl}/admin`;
   await sendEmail({
     to: recipients,
     subject: "Neue Registrierung in der Tennis-Buchungsapp",
+    text,
+    html
+  });
+}
+
+export async function sendGuestBookingConfirmationEmail(booking: GuestBookingConfirmation) {
+  const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "full", timeZone: "UTC" }).format(booking.startTime);
+  const start = booking.startTime.toISOString().slice(11, 16);
+  const end = booking.endTime.toISOString().slice(11, 16);
+  const price = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(
+    booking.totalAmountCents / 100
+  );
+  const text = `Hallo ${booking.name},
+
+Ihre Tennisplatz-Buchung ist bezahlt und bestätigt.
+
+Buchungsnummer: ${booking.bookingCode}
+Platz: ${booking.courtName}
+Termin: ${date}, ${start} bis ${end} Uhr
+Bezahlt: ${price} über PayPal
+
+Buchung stornieren:
+${booking.cancellationUrl}
+
+Bitte bewahren Sie die Buchungsnummer auf.`;
+  const html = `
+    <h1>Buchung bestätigt</h1>
+    <p>Hallo ${escapeHtml(booking.name)},</p>
+    <p>Ihre Tennisplatz-Buchung ist bezahlt und bestätigt.</p>
+    <p><strong>Buchungsnummer:</strong> ${escapeHtml(booking.bookingCode)}</p>
+    <p><strong>Platz:</strong> ${escapeHtml(booking.courtName)}<br>
+    <strong>Termin:</strong> ${escapeHtml(date)}, ${start} bis ${end} Uhr<br>
+    <strong>Bezahlt:</strong> ${escapeHtml(price)} über PayPal</p>
+    <p><a href="${escapeHtml(booking.cancellationUrl)}">Buchung stornieren</a></p>
+    <p>Bitte bewahren Sie die Buchungsnummer auf.</p>
+  `;
+
+  await sendEmail({
+    to: booking.email,
+    subject: `Tennisplatz-Buchung ${booking.bookingCode} bestätigt`,
     text,
     html
   });

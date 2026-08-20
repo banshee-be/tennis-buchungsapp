@@ -409,6 +409,8 @@ export function BookingBoard() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [loading, setLoading] = useState(true);
   const [booking, setBooking] = useState(false);
+  const [guestDetails, setGuestDetails] = useState({ name: "", email: "", phone: "" });
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [message, setMessage] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(startOfMonth(today()));
   const [desktopCalendarOpen, setDesktopCalendarOpen] = useState(false);
@@ -435,6 +437,7 @@ export function BookingBoard() {
   const activeView = viewModes.find((mode) => mode.key === viewMode) ?? viewModes[0];
   const totalCourtColumns = displayDays.reduce((sum, day) => sum + day.courts.length, 0);
   const bookingButtonLabel = !selection || !durationIsValid ? "Zeitfenster auswählen" : isExternal ? "Weiter zur Zahlung" : "Buchung bestätigen";
+  const guestFormValid = Boolean(user || (guestDetails.name.trim().length >= 2 && guestDetails.email.includes("@") && privacyAccepted));
 
   async function loadSession() {
     const response = await fetch("/api/auth/me", { cache: "no-store" });
@@ -649,22 +652,23 @@ export function BookingBoard() {
       return;
     }
 
-    if (!user) {
-      setMessage("Bitte oben einloggen oder registrieren.");
+    if (!guestFormValid) {
+      setMessage("Bitte Name, E-Mail-Adresse und Datenschutzbestätigung ausfüllen.");
       return;
     }
 
     setBooking(true);
     setMessage("");
 
-    const response = await fetch("/api/bookings", {
+    const response = await fetch(user ? "/api/bookings" : "/api/guest-bookings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         courtId: selection.courtId,
         date: selection.date,
         startTime: selection.time,
-        durationMinutes
+        durationMinutes,
+        ...(!user ? guestDetails : {})
       })
     });
     const data = await response.json();
@@ -789,7 +793,7 @@ export function BookingBoard() {
 
   return (
     <div className="booking-experience">
-      <aside className="booking-summary-card">
+      <aside className={`booking-summary-card ${!user ? "guest-summary" : ""}`}>
         <div className="summary-kicker">Tennisanlage Marburg-Marbach</div>
         <h2>Buchungsübersicht</h2>
 
@@ -818,7 +822,7 @@ export function BookingBoard() {
                   : user.membershipType === "MEMBER"
                     ? "Mitgliedsstatus wird geprüft · bis zur Bestätigung gilt Gastpreis"
                     : "Gastspieler"
-                : "Nicht eingeloggt"}
+                : "Gast ohne Konto"}
             </dd>
           </div>
           <div>
@@ -835,9 +839,53 @@ export function BookingBoard() {
           </div>
         </dl>
 
+        {!user ? (
+          <div className="guest-booking-form" aria-label="Kontaktdaten für die Gastbuchung">
+            <strong>Als Gast ohne Konto buchen</strong>
+            <label>
+              Name
+              <input
+                autoComplete="name"
+                maxLength={100}
+                onChange={(event) => setGuestDetails({ ...guestDetails, name: event.target.value })}
+                required
+                value={guestDetails.name}
+              />
+            </label>
+            <label>
+              E-Mail-Adresse
+              <input
+                autoComplete="email"
+                inputMode="email"
+                maxLength={254}
+                onChange={(event) => setGuestDetails({ ...guestDetails, email: event.target.value })}
+                required
+                type="email"
+                value={guestDetails.email}
+              />
+            </label>
+            <label>
+              Telefonnummer (optional)
+              <input
+                autoComplete="tel"
+                inputMode="tel"
+                maxLength={40}
+                onChange={(event) => setGuestDetails({ ...guestDetails, phone: event.target.value })}
+                type="tel"
+                value={guestDetails.phone}
+              />
+            </label>
+            <label className="guest-privacy-check">
+              <input checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} type="checkbox" />
+              <span>Meine Daten dürfen zur Abwicklung dieser Buchung und Zahlung verarbeitet werden.</span>
+            </label>
+            <small>Es wird kein Benutzerkonto angelegt. Die Buchungsbestätigung kommt per E-Mail.</small>
+          </div>
+        ) : null}
+
         {message ? <p className={message.includes("bestätigt") ? "form-success" : "form-error"}>{message}</p> : null}
 
-        <button className="button primary full" disabled={booking || !selection || !durationIsValid} onClick={confirmBooking}>
+        <button className="button primary full" disabled={booking || !selection || !durationIsValid || !guestFormValid} onClick={confirmBooking}>
           {bookingButtonLabel}
         </button>
       </aside>
@@ -970,7 +1018,7 @@ export function BookingBoard() {
               {isVerifiedMember ? "Kostenfrei" : euro(price)}
             </span>
           </div>
-          <button className="button primary" disabled={booking || !durationIsValid} onClick={confirmBooking} type="button">
+          <button className="button primary" disabled={booking || !durationIsValid || !guestFormValid} onClick={confirmBooking} type="button">
             {bookingButtonLabel}
           </button>
         </div>

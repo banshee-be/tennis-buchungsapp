@@ -9,6 +9,7 @@ import {
   serializeBooking
 } from "@/lib/bookings";
 import { handleRoute, jsonError } from "@/lib/http";
+import { createBookingCode } from "@/lib/guest-bookings";
 import { createCheckoutForBooking } from "@/lib/payments";
 import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
@@ -124,6 +125,7 @@ export async function POST(request: NextRequest) {
             status: isMember ? "CONFIRMED" : "PENDING",
             paymentStatus: isMember ? "NOT_REQUIRED" : "PENDING",
             totalAmountCents: amountCents,
+            bookingCode: isMember ? null : createBookingCode(),
             expiresAt: isMember ? null : new Date(Date.now() + 15 * 60_000)
           },
           include: bookingInclude()
@@ -138,6 +140,7 @@ export async function POST(request: NextRequest) {
                 bookingId: booking.id,
                 amountCents,
                 currency: "eur",
+                provider: "paypal",
                 status: "PENDING"
               }
             });
@@ -158,7 +161,7 @@ export async function POST(request: NextRequest) {
       const checkout = await createCheckoutForBooking({
         booking: result.booking,
         payment: result.payment,
-        user,
+        customer: user,
         courtName: result.booking.court.name,
         origin: process.env.APP_URL ?? request.nextUrl.origin
       });

@@ -4,13 +4,14 @@ Produktionsnahe Next.js-Web-App fuer die Platzbuchung eines Tennisvereins. Die O
 
 ## Funktionen
 
-- Login und Registrierung mit Name und E-Mail-Adresse.
+- Login und Registrierung fuer Mitglieder; Gastbuchungen funktionieren auch ohne Konto.
 - Nutzerprofil mit Mitglied/Gastspieler, Rolle und Buchungshistorie.
 - Tagesansicht fuer vier Tennisplaetze mit Status: Frei, Belegt, Platz gesperrt, Eigene Buchung.
 - Buchungsdauer 30, 60 oder 90 Minuten.
 - Serverseitige Verfuegbarkeitspruefung vor jeder Buchung.
 - Datenbank-Schutz gegen Doppelbuchungen ueber eindeutige `BookingSlot`-Datensaetze.
-- Stripe Checkout fuer externe Gastspieler, inklusive Webhook-Bestaetigung.
+- PayPal Checkout fuer externe Gastspieler, inklusive serverseitigem Capture und verifiziertem Webhook.
+- Automatische PayPal-Rueckerstattung bei fristgerechter Stornierung oder verspaeteter Zahlung nach Ablauf der Reservierung.
 - Admin-Bereich fuer Buchungen, Nutzerstatus, Preise, Oeffnungszeiten, Plaetze und Sperren.
 - Responsive Layout fuer Desktop und Smartphone.
 
@@ -21,7 +22,7 @@ Produktionsnahe Next.js-Web-App fuer die Platzbuchung eines Tennisvereins. Die O
 - Node.js API Routes
 - Prisma ORM
 - SQLite lokal, PostgreSQL spaeter moeglich
-- Stripe Checkout
+- PayPal Orders API v2
 
 ## Installation
 
@@ -43,22 +44,23 @@ Siehe `.env.example`.
 - `ADMIN_EMAILS`: kommaseparierte Liste der Admin-Adressen.
 - `EMBEDDED_COOKIE_MODE`: bei echter iframe-Einbettung auf einer anderen Domain `true` setzen. Dann werden Session-Cookies mit `SameSite=None; Secure` gesetzt.
 - `DATABASE_URL`: lokal `file:./dev.db`.
-- `STRIPE_SECRET_KEY`: Stripe Secret Key.
-- `STRIPE_WEBHOOK_SECRET`: Webhook Signing Secret.
-- `STRIPE_DEMO_MODE`: lokal `true`, in Produktion `false`.
+- `PAYPAL_ENVIRONMENT`: `sandbox` fuer Entwicklung, `live` fuer Produktion.
+- `PAYPAL_CLIENT_ID`: Client-ID der PayPal REST-App.
+- `PAYPAL_CLIENT_SECRET`: Secret der PayPal REST-App.
+- `PAYPAL_WEBHOOK_ID`: ID des im PayPal-Dashboard angelegten Webhooks.
 - `APP_URL`: oeffentliche URL der App, zum Beispiel `https://buchung.verein.de`.
 
-## Stripe
+## PayPal
 
-Die App erstellt fuer Gastspieler serverseitig eine Stripe Checkout Session. Die Buchung bleibt bis zur Zahlung im Status `PENDING` und wird erst nach `checkout.session.completed` bestaetigt. Fehlgeschlagene oder abgelaufene Zahlungen geben die reservierten Slots wieder frei.
+Die App erstellt fuer Gastspieler serverseitig eine PayPal Order. Die Buchung bleibt 15 Minuten im Status `PENDING` und wird erst nach einem erfolgreichen PayPal Capture bestaetigt. PayPal-Betrag, Waehrung, Order-ID und Buchungs-ID werden serverseitig abgeglichen. Fehlgeschlagene oder abgebrochene Zahlungen geben die reservierten Slots wieder frei. Trifft eine Zahlung erst nach Ablauf der Reservierung ein, wird sie automatisch erstattet.
 
 Webhook-Endpoint:
 
 ```text
-POST /api/payments/stripe-webhook
+POST /api/payments/paypal-webhook
 ```
 
-Lokal kann der Demo-Modus verwendet werden. In Produktion sollte `STRIPE_DEMO_MODE=false` gesetzt und der Stripe Webhook im Dashboard eingetragen werden.
+Im PayPal Developer Dashboard wird zunaechst eine Sandbox-App angelegt. Fuer den Livegang werden Live-Zugangsdaten gesetzt und `PAYPAL_ENVIRONMENT=live` aktiviert.
 
 ## Beispiel-Daten
 
@@ -111,4 +113,14 @@ npx prisma migrate deploy
 
 Die App prueft die Verfuegbarkeit nicht nur im Browser, sondern immer erneut im API-Endpunkt. Jede Buchung erzeugt pro kleinem Zeitfenster einen `BookingSlot`. Die Datenbank hat darauf einen eindeutigen Index pro Platz und Slot-Startzeit. Dadurch kann selbst bei parallelen Anfragen nur eine Buchung denselben Platz im selben Zeitfenster belegen.
 
-Stripe-Webhooks verwenden den rohen Request-Body und das `STRIPE_WEBHOOK_SECRET`, damit nur echte Stripe-Ereignisse Buchungen bestaetigen koennen.
+PayPal-Webhooks werden vor der Verarbeitung ueber PayPals `verify-webhook-signature`-API geprueft. Ereignis-IDs und PayPal Capture-IDs sind eindeutig gespeichert, damit Wiederholungen keine zweite Buchungsbestaetigung ausloesen.
+
+## PayPal-Dashboard einrichten
+
+1. Unter **Apps & Credentials** eine REST-App in der Sandbox anlegen.
+2. `PAYPAL_CLIENT_ID` und `PAYPAL_CLIENT_SECRET` in der Hosting-Umgebung hinterlegen.
+3. Den Webhook `https://DEINE-DOMAIN/api/payments/paypal-webhook` anlegen.
+4. Mindestens `CHECKOUT.ORDER.APPROVED`, `CHECKOUT.ORDER.VOIDED`, `PAYMENT.CAPTURE.COMPLETED` und `PAYMENT.CAPTURE.DENIED` abonnieren.
+5. Die angezeigte Webhook-ID als `PAYPAL_WEBHOOK_ID` speichern.
+6. Sandbox-Zahlung, Abbruch, erneute Webhook-Zustellung und Rueckerstattung testen.
+7. Erst danach eine Live-App anlegen, Live-Zugangsdaten setzen und `PAYPAL_ENVIRONMENT=live` aktivieren.
