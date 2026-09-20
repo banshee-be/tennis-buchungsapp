@@ -10,7 +10,7 @@ const NEUTRAL_MESSAGE = "Falls ein Konto mit dieser E-Mail existiert, wurde ein 
 export async function POST(request: NextRequest) {
   const body = (await request.json().catch(() => null)) as { email?: string } | null;
   const email = body?.email ? normalizeEmail(body.email) : "";
-  const rateLimit = checkRateLimit(`password-reset-request:${email || getClientIp(request)}`);
+  const rateLimit = await checkRateLimit(`password-reset-request:${email || getClientIp(request)}`);
 
   if (rateLimit.limited) {
     return NextResponse.json({ error: "Zu viele Versuche. Bitte später erneut versuchen." }, { status: 429 });

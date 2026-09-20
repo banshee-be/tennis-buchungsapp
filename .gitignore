@@ -8,4 +8,5 @@ dist
 .DS_Store
 tsconfig.tsbuildinfo
 .vercel
-.env.local
+.env*
+!.env.example

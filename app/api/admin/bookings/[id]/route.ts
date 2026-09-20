@@ -14,10 +14,11 @@ import { calculateAmountCents, getSettings } from "@/lib/settings";
 import { isVerifiedMember, requireAdmin } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
 import { refundPayPalBooking } from "@/lib/payment-processing";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await context.params;
     const body = (await request.json().catch(() => null)) as
       | {
@@ -44,11 +45,13 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         const refunded = await refundPayPalBooking(id, "Vom Admin storniert und über PayPal zurückerstattet.");
 
         if (refunded) {
+          await writeAuditLog({ actorUserId: admin.id, action: "BOOKING_CANCELLED_AND_REFUNDED", entityType: "Booking", entityId: id, request });
           return NextResponse.json({ booking: serializeBooking(refunded) });
         }
       }
 
       const cancelled = await prisma.$transaction((tx) => cancelBooking(tx, id, "Vom Admin storniert."));
+      await writeAuditLog({ actorUserId: admin.id, action: "BOOKING_CANCELLED", entityType: "Booking", entityId: id, request });
       return NextResponse.json({ booking: serializeBooking(cancelled) });
     }
 
@@ -71,7 +74,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         : existing.totalAmountCents;
 
     try {
-      const booking = await prisma.$transaction(async (tx) => {
+    const booking = await prisma.$transaction(async (tx) => {
         await releaseExpiredPendingBookings(tx);
 
         if (parsed) {
@@ -98,9 +101,18 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         }
 
         return updated;
-      });
+    });
 
-      return NextResponse.json({ booking: serializeBooking(booking) });
+    await writeAuditLog({
+      actorUserId: admin.id,
+      action: "BOOKING_UPDATED",
+      entityType: "Booking",
+      entityId: id,
+      details: { changedFields: Object.keys(body ?? {}).sort() },
+      request
+    });
+
+    return NextResponse.json({ booking: serializeBooking(booking) });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
         return jsonError("Dieses Zeitfenster ist bereits belegt.", 409);
@@ -115,11 +127,24 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
   });
 }
 
-export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await context.params;
-    await prisma.booking.delete({ where: { id } });
-    return NextResponse.json({ ok: true });
+    const existing = await prisma.booking.findUnique({ where: { id }, include: { payment: true } });
+
+    if (!existing) {
+      return jsonError("Buchung nicht gefunden.", 404);
+    }
+
+    if (existing.paymentStatus === "PAID") {
+      await refundPayPalBooking(id, "Vom Admin archiviert, storniert und über PayPal zurückerstattet.");
+    } else if (existing.status !== "CANCELLED") {
+      await prisma.$transaction((tx) => cancelBooking(tx, id, "Vom Admin archiviert und storniert."));
+    }
+
+    const booking = await prisma.booking.update({ where: { id }, data: { archivedAt: new Date() }, include: bookingInclude() });
+    await writeAuditLog({ actorUserId: admin.id, action: "BOOKING_ARCHIVED", entityType: "Booking", entityId: id, request });
+    return NextResponse.json({ ok: true, booking: serializeBooking(booking) });
   });
 }

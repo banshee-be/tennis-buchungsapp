@@ -19,6 +19,7 @@ export async function GET() {
     await releaseExpiredPendingBookings(prisma);
 
     const bookings = await prisma.booking.findMany({
+      where: { archivedAt: null },
       include: bookingInclude(),
       orderBy: { startTime: "desc" },
       take: 200

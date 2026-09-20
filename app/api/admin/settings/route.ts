@@ -3,6 +3,7 @@ import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
 import { requireAdmin } from "@/lib/session";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function GET() {
   return handleRoute(async () => {
@@ -14,7 +15,7 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = (await request.json().catch(() => null)) as
       | {
           externalHourlyRateCents?: number;
@@ -26,6 +27,8 @@ export async function PATCH(request: NextRequest) {
           maxActiveBookingsPerUser?: number;
           maxAdvanceBookingDaysMember?: number;
           maxAdvanceBookingDaysGuest?: number;
+          guestDataRetentionDays?: number;
+          reminderHoursBefore?: number;
           matchBlockDurationHours?: number;
           matchBlockDefaultStartTime?: string;
           matchBlockCourtIds?: string;
@@ -48,6 +51,8 @@ export async function PATCH(request: NextRequest) {
     const maxAdvanceBookingDaysMember = Number(body.maxAdvanceBookingDaysMember);
     const maxAdvanceBookingDaysGuest = Number(body.maxAdvanceBookingDaysGuest);
     const externalHourlyRateCents = Number(body.externalHourlyRateCents);
+    const guestDataRetentionDays = Number(body.guestDataRetentionDays);
+    const reminderHoursBefore = Number(body.reminderHoursBefore);
     const matchBlockDurationHours = Number(body.matchBlockDurationHours);
     const matchBlockDefaultStartTime = body.matchBlockDefaultStartTime?.trim() || "09:00";
     const matchBlockCourtIds = body.matchBlockCourtIds?.trim() || "1,2,3,4";
@@ -80,7 +85,13 @@ export async function PATCH(request: NextRequest) {
       !Number.isInteger(maxAdvanceBookingDaysMember) ||
       maxAdvanceBookingDaysMember < 1 ||
       !Number.isInteger(maxAdvanceBookingDaysGuest) ||
-      maxAdvanceBookingDaysGuest < 1
+      maxAdvanceBookingDaysGuest < 1 ||
+      !Number.isInteger(guestDataRetentionDays) ||
+      guestDataRetentionDays < 30 ||
+      guestDataRetentionDays > 1095 ||
+      !Number.isInteger(reminderHoursBefore) ||
+      reminderHoursBefore < 1 ||
+      reminderHoursBefore > 72
     ) {
       return jsonError("Bitte gültige Buchungsregeln eintragen.");
     }
@@ -115,6 +126,8 @@ export async function PATCH(request: NextRequest) {
         maxActiveBookingsPerUser,
         maxAdvanceBookingDaysMember,
         maxAdvanceBookingDaysGuest,
+        guestDataRetentionDays,
+        reminderHoursBefore,
         matchBlockDurationHours,
         matchBlockDefaultStartTime,
         matchBlockCourtIds: matchBlockCourtIds.replace(/\s+/g, ""),
@@ -122,6 +135,15 @@ export async function PATCH(request: NextRequest) {
         matchBlockBufferAfterMinutes,
         cancellationRules: body.cancellationRules?.trim() || undefined
       }
+    });
+
+    await writeAuditLog({
+      actorUserId: admin.id,
+      action: "SETTINGS_UPDATED",
+      entityType: "Settings",
+      entityId: settings.id,
+      details: { changedFields: Object.keys(body).sort() },
+      request
     });
 
     return NextResponse.json({ settings });

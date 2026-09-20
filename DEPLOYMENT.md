@@ -265,6 +265,7 @@ AUTH_SECRET=ein-langer-zufaelliger-geheimer-wert
 ADMIN_EMAILS=admin@beispiel.de,vorstand@beispiel.de
 DATABASE_URL=...
 NEXT_PUBLIC_CLUB_NAME="TV Europabad Marbach"
+CRON_SECRET=ein-weiterer-langer-zufaelliger-geheimer-wert
 ```
 
 Fuer Neon/Vercel:
@@ -346,14 +347,15 @@ Zu abonnierende Ereignisse: `CHECKOUT.ORDER.APPROVED`, `CHECKOUT.ORDER.VOIDED`, 
 
 ## Rate Limiting
 
-Die sensiblen Auth-Endpunkte haben einen einfachen In-Memory-Basisschutz:
+Die sensiblen Endpunkte nutzen einen gemeinsamen, PostgreSQL-basierten Anfrageschutz:
 
 - Login
 - Registrierung
 - Passwort vergessen
 - Passwort zurücksetzen
+- Gastbuchung und Gaststornierung
 
-Für echte Production auf Vercel wird ein externer Store empfohlen, z. B. Upstash Redis, weil serverlose Instanzen keinen dauerhaft gemeinsamen Speicher haben.
+Abgelaufene Zaehler werden im taeglichen Wartungslauf entfernt.
 
 ## E-Mail-Versand mit Resend
 
@@ -361,6 +363,7 @@ Die App nutzt Resend fuer:
 
 - Passwort-zuruecksetzen-E-Mails
 - Admin-Benachrichtigung bei neuer Registrierung
+- Gast-Buchungsbestaetigungen und Erinnerungen
 
 Einrichtung:
 
@@ -377,6 +380,26 @@ NEXT_PUBLIC_APP_URL=https://buchung.tveuropabad-marbach.de
 ```
 
 Danach in Vercel ein neues Deployment ausloesen.
+
+## Taeglicher Wartungslauf
+
+`vercel.json` plant den geschuetzten Endpunkt `/api/cron/daily-maintenance` taeglich um 05:15 UTC ein. Er erledigt folgende Arbeiten:
+
+- abgelaufene vorlaeufige Buchungen freigeben
+- fehlgeschlagene Bestaetigungs-E-Mails erneut versuchen
+- an bevorstehende Gastbuchungen erinnern
+- Gastdaten nach der im Adminbereich festgelegten Aufbewahrungsfrist anonymisieren
+- abgelaufene Rate-Limit-Eintraege entfernen
+
+In Vercel muss dafuer ein langer Zufallswert als `CRON_SECRET` gesetzt werden. Der Endpunkt akzeptiert ausschliesslich `Authorization: Bearer <CRON_SECRET>`.
+
+## Manuelle Produktionspruefungen
+
+- Vollstaendige Vereinsangaben im Impressum juristisch pruefen und ergaenzen.
+- Datenschutzerklaerung und Buchungsbedingungen vom Verein freigeben lassen.
+- Neon-Backups beziehungsweise Point-in-Time-Recovery im gebuchten Tarif kontrollieren.
+- In Vercel Benachrichtigungen fuer fehlgeschlagene Deployments und Funktionsfehler aktivieren.
+- Die Subdomain im DNS einrichten und danach `APP_URL` sowie `NEXT_PUBLIC_APP_URL` aktualisieren.
 
 Hinweise:
 

@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
   const token = body?.token ?? "";
   const password = body?.password ?? "";
   const passwordConfirm = body?.passwordConfirm ?? "";
-  const rateLimit = checkRateLimit(`password-reset-confirm:${getClientIp(request)}`);
+  const rateLimit = await checkRateLimit(`password-reset-confirm:${getClientIp(request)}`);
 
   if (rateLimit.limited) {
     return jsonError("Zu viele Versuche. Bitte später erneut versuchen.", 429);

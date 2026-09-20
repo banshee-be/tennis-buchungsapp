@@ -3,6 +3,7 @@ import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { buildUtcDate, timeToMinutes } from "@/lib/time";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function GET() {
   return handleRoute(async () => {
@@ -25,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const body = (await request.json().catch(() => null)) as
       | { courtId?: number; date?: string; startTime?: string; endTime?: string; title?: string; reason?: string }
       | null;
@@ -62,6 +63,15 @@ export async function POST(request: NextRequest) {
         title: body.title.trim(),
         reason: body.reason?.trim() || null
       }
+    });
+
+    await writeAuditLog({
+      actorUserId: admin.id,
+      action: "COURT_BLOCK_CREATED",
+      entityType: "CourtBlock",
+      entityId: block.id,
+      details: { courtId: block.courtId, title: block.title },
+      request
     });
 
     return NextResponse.json({

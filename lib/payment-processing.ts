@@ -5,7 +5,7 @@ import { createGuestCancellationToken } from "@/lib/guest-bookings";
 import { paidCaptureFromOrder, refundPayPalCapture } from "@/lib/payments";
 import { prisma } from "@/lib/prisma";
 
-async function sendGuestConfirmationOnce(bookingId: string) {
+export async function sendGuestConfirmationOnce(bookingId: string) {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     include: { court: true }
@@ -28,6 +28,9 @@ async function sendGuestConfirmationOnce(bookingId: string) {
   const cancellationUrl = new URL("/gastbuchung/stornieren", process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000");
   cancellationUrl.searchParams.set("code", booking.bookingCode);
   cancellationUrl.searchParams.set("token", token);
+  const calendarUrl = new URL("/api/guest-bookings/calendar", process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000");
+  calendarUrl.searchParams.set("code", booking.bookingCode);
+  calendarUrl.searchParams.set("token", token);
 
   try {
     await sendGuestBookingConfirmationEmail({
@@ -38,10 +41,19 @@ async function sendGuestConfirmationOnce(bookingId: string) {
       startTime: booking.startTime,
       endTime: booking.endTime,
       totalAmountCents: booking.totalAmountCents,
-      cancellationUrl: cancellationUrl.toString()
+      cancellationUrl: cancellationUrl.toString(),
+      calendarUrl: calendarUrl.toString()
     });
+    await prisma.booking.update({ where: { id: bookingId }, data: { lastEmailError: null } });
   } catch (error) {
-    await prisma.booking.update({ where: { id: bookingId }, data: { confirmationEmailSentAt: null } });
+    await prisma.booking.update({
+      where: { id: bookingId },
+      data: {
+        confirmationEmailSentAt: null,
+        lastEmailError: error instanceof Error ? error.message.slice(0, 500) : "Unbekannter E-Mail-Fehler",
+        emailRetryCount: { increment: 1 }
+      }
+    });
     throw error;
   }
 }
@@ -80,6 +92,9 @@ export async function processCompletedPayPalOrder(order: PayPalOrder, expectedBo
   await sendGuestConfirmationOnce(bookingId).catch((error) => {
     console.error("Buchungsbestätigung konnte noch nicht per E-Mail gesendet werden.", error);
   });
+  await prisma.auditLog.create({
+    data: { action: "GUEST_BOOKING_PAID", entityType: "Booking", entityId: bookingId, details: { captureId: capture.captureId } }
+  }).catch(() => null);
   return confirmed;
 }
 

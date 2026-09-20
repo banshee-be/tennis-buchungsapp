@@ -13,6 +13,9 @@ Produktionsnahe Next.js-Web-App fuer die Platzbuchung eines Tennisvereins. Die O
 - PayPal Checkout fuer externe Gastspieler, inklusive serverseitigem Capture und verifiziertem Webhook.
 - Automatische PayPal-Rueckerstattung bei fristgerechter Stornierung oder verspaeteter Zahlung nach Ablauf der Reservierung.
 - Admin-Bereich fuer Buchungen, Nutzerstatus, Preise, Oeffnungszeiten, Plaetze und Sperren.
+- Admin-Uebersicht mit Betriebskennzahlen und nachvollziehbarem Aenderungsprotokoll.
+- Buchungserinnerungen, Kalenderdateien, fehlertoleranter E-Mail-Versand und automatische Datenbereinigung.
+- Datenbankgestuetzter Schutz vor zu vielen Anfragen, auch ueber mehrere Serverinstanzen hinweg.
 - Responsive Layout fuer Desktop und Smartphone.
 
 ## Tech-Stack
@@ -21,7 +24,7 @@ Produktionsnahe Next.js-Web-App fuer die Platzbuchung eines Tennisvereins. Die O
 - React
 - Node.js API Routes
 - Prisma ORM
-- SQLite lokal, PostgreSQL spaeter moeglich
+- PostgreSQL mit Prisma ORM
 - PayPal Orders API v2
 
 ## Installation
@@ -49,6 +52,7 @@ Siehe `.env.example`.
 - `PAYPAL_CLIENT_SECRET`: Secret der PayPal REST-App.
 - `PAYPAL_WEBHOOK_ID`: ID des im PayPal-Dashboard angelegten Webhooks.
 - `APP_URL`: oeffentliche URL der App, zum Beispiel `https://buchung.verein.de`.
+- `CRON_SECRET`: langer Zufallswert zum Schutz des taeglichen Wartungslaufs.
 
 ## PayPal
 
@@ -94,7 +98,7 @@ Fuer eine engere Integration kann spaeter eine kleine WordPress-Plugin-Huelle ge
 
 ## PostgreSQL in Produktion
 
-Fuer PostgreSQL in `prisma/schema.prisma` den Datasource-Provider auf `postgresql` setzen und `DATABASE_URL` entsprechend konfigurieren:
+Die App ist bereits fuer PostgreSQL konfiguriert. `DATABASE_URL` muss auf die produktive Datenbank zeigen:
 
 ```prisma
 datasource db {
@@ -108,6 +112,10 @@ Danach Migrationen in der Zielumgebung neu anwenden:
 ```bash
 npx prisma migrate deploy
 ```
+
+## Taegliche Wartung
+
+Vercel ruft einmal taeglich `/api/cron/daily-maintenance` auf. Der Lauf gibt abgelaufene Reservierungen frei, wiederholt fehlgeschlagene Bestaetigungs-E-Mails, sendet Buchungserinnerungen und anonymisiert alte Gastdaten gemaess der Admin-Einstellung. Vercel sendet `CRON_SECRET` automatisch im Authorization-Header; die Variable muss in Production gesetzt sein.
 
 ## Sicherheit und Doppelbuchungen
 

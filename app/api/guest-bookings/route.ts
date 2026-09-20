@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
           durationMinutes?: number;
         }
       | null;
-    const rateLimit = checkRateLimit(`guest-booking:${getClientIp(request)}`, 10, 15 * 60_000);
+    const rateLimit = await checkRateLimit(`guest-booking:${getClientIp(request)}`, 10, 15 * 60_000);
 
     if (rateLimit.limited) {
       return jsonError("Zu viele Buchungsversuche. Bitte versuchen Sie es später erneut.", 429);

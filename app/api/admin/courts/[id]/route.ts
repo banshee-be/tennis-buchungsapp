@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
+import { writeAuditLog } from "@/lib/audit";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await context.params;
     const body = (await request.json().catch(() => null)) as { isActive?: boolean; notes?: string; name?: string } | null;
 
@@ -20,6 +21,15 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         notes: body.notes ?? undefined,
         name: body.name?.trim() || undefined
       }
+    });
+
+    await writeAuditLog({
+      actorUserId: admin.id,
+      action: "COURT_UPDATED",
+      entityType: "Court",
+      entityId: String(court.id),
+      details: { name: court.name, isActive: court.isActive },
+      request
     });
 
     return NextResponse.json({ court });

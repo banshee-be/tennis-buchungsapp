@@ -30,7 +30,7 @@ export async function releaseExpiredPendingBookings(db: Db) {
   const ids = expired.map((booking) => booking.id);
 
   if (ids.length === 0) {
-    return;
+    return 0;
   }
 
   await db.bookingSlot.deleteMany({ where: { bookingId: { in: ids } } });
@@ -46,6 +46,7 @@ export async function releaseExpiredPendingBookings(db: Db) {
       cancelReason: "Zahlung abgelaufen."
     }
   });
+  return ids.length;
 }
 
 export async function assertCourtCanBeBooked(

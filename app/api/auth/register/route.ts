@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   const passwordConfirm = body?.passwordConfirm ?? "";
   const membershipType = body?.membershipType === "MEMBER" ? "MEMBER" : "EXTERNAL";
   const memberNumber = membershipType === "MEMBER" ? body?.memberNumber?.trim() || null : null;
-  const rateLimit = checkRateLimit(`register:${email || getClientIp(request)}`);
+  const rateLimit = await checkRateLimit(`register:${email || getClientIp(request)}`);
 
   if (rateLimit.limited) {
     return jsonError("Zu viele Versuche. Bitte später erneut versuchen.", 429);

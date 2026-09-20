@@ -4,12 +4,17 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type Booking = {
   id: string;
+  bookingCode?: string | null;
   startTime: string;
   endTime: string;
   durationMinutes: number;
   status: "PENDING" | "CONFIRMED" | "CANCELLED";
   paymentStatus: "NOT_REQUIRED" | "PENDING" | "PAID" | "FAILED";
   totalAmountCents: number;
+  confirmationEmailSentAt?: string | null;
+  reminderEmailSentAt?: string | null;
+  lastEmailError?: string | null;
+  emailRetryCount?: number;
   user?: { name: string; email: string; membershipType?: "MEMBER" | "EXTERNAL"; membershipStatus?: "PENDING" | "VERIFIED" | "REJECTED" };
   court?: { name: string };
 };
@@ -162,6 +167,8 @@ type Settings = {
   maxActiveBookingsPerUser: number;
   maxAdvanceBookingDaysMember: number;
   maxAdvanceBookingDaysGuest: number;
+  guestDataRetentionDays: number;
+  reminderHoursBefore: number;
   matchBlockDurationHours: number;
   matchBlockDefaultStartTime: string;
   matchBlockCourtIds: string;
@@ -179,7 +186,16 @@ type Block = {
   court?: Court;
 };
 
-const tabs = ["Buchungen", "Nutzer", "Preise & Zeiten", "Plätze & Sperren"] as const;
+type AuditLog = {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId?: string | null;
+  createdAt: string;
+  actor?: { name: string; email: string } | null;
+};
+
+const tabs = ["Übersicht", "Buchungen", "Nutzer", "Preise & Zeiten", "Plätze & Sperren"] as const;
 type Tab = (typeof tabs)[number];
 type DetailTab = "Übersicht" | "Vertrag" | "Schlüssel" | "nuLiga" | "Buchungen" | "Notizen";
 const detailTabs: DetailTab[] = ["Übersicht", "Vertrag", "Schlüssel", "nuLiga", "Buchungen", "Notizen"];
@@ -327,11 +343,12 @@ function formatDateLocal(value: string) {
 }
 
 export function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>("Buchungen");
+  const [activeTab, setActiveTab] = useState<Tab>("Übersicht");
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [courts, setCourts] = useState<Court[]>([]);
   const [blocks, setBlocks] = useState<Block[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [teamPlayers, setTeamPlayers] = useState<TeamPlayerOption[]>([]);
   const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Record<string, string>>({});
@@ -384,6 +401,8 @@ export function AdminDashboard() {
       maxActiveBookingsPerUser: String(settings?.maxActiveBookingsPerUser ?? 3),
       maxAdvanceBookingDaysMember: String(settings?.maxAdvanceBookingDaysMember ?? 7),
       maxAdvanceBookingDaysGuest: String(settings?.maxAdvanceBookingDaysGuest ?? 3),
+      guestDataRetentionDays: String(settings?.guestDataRetentionDays ?? 180),
+      reminderHoursBefore: String(settings?.reminderHoursBefore ?? 24),
       matchBlockDurationHours: String(settings?.matchBlockDurationHours ?? 6),
       matchBlockDefaultStartTime: settings?.matchBlockDefaultStartTime ?? "09:00",
       matchBlockCourtIds: settings?.matchBlockCourtIds ?? "1,2,3,4",
@@ -442,6 +461,29 @@ export function AdminDashboard() {
     [teamPlayers]
   );
 
+  const dashboardStats = useMemo(() => {
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date(todayStart);
+    todayEnd.setDate(todayEnd.getDate() + 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const confirmed = bookings.filter((booking) => booking.status === "CONFIRMED");
+    return {
+      today: confirmed.filter((booking) => {
+        const start = new Date(booking.startTime);
+        return start >= todayStart && start < todayEnd;
+      }).length,
+      upcoming: confirmed.filter((booking) => new Date(booking.startTime) > now).length,
+      monthlyRevenueCents: confirmed
+        .filter((booking) => booking.paymentStatus === "PAID" && new Date(booking.startTime) >= monthStart)
+        .reduce((sum, booking) => sum + booking.totalAmountCents, 0),
+      paymentIssues: bookings.filter((booking) => booking.paymentStatus === "FAILED" || booking.paymentStatus === "PENDING").length,
+      emailIssues: bookings.filter((booking) => Boolean(booking.lastEmailError)).length,
+      pendingMembers: users.filter((user) => user.membershipType === "MEMBER" && user.membershipStatus === "PENDING").length
+    };
+  }, [bookings, users]);
+
   const rosterPlayers = useMemo(() => {
     if (teamRosterFilter === "Alle") return teamPlayers;
     if (teamRosterFilter === "Ohne Mannschaft") return [];
@@ -469,9 +511,10 @@ export function AdminDashboard() {
       fetch("/api/admin/blocks", { cache: "no-store" }),
       fetch("/api/admin/settings", { cache: "no-store" }),
       fetch("/api/admin/nuliga/import", { cache: "no-store" }),
-      fetch("/api/admin/nuliga/matches", { cache: "no-store" })
+      fetch("/api/admin/nuliga/matches", { cache: "no-store" }),
+      fetch("/api/admin/audit", { cache: "no-store" })
     ];
-    const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse, nuligaResponse, nuligaMatchesResponse] =
+    const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse, nuligaResponse, nuligaMatchesResponse, auditResponse] =
       await Promise.all(endpoints);
 
     if (!bookingsResponse.ok) {
@@ -497,6 +540,7 @@ export function AdminDashboard() {
     setSettings(settingsData.settings);
     setNuLigaSummary(nuligaResponse.ok ? await nuligaResponse.json() : null);
     setNuLigaMatchSummary(nuligaMatchesResponse.ok ? await nuligaMatchesResponse.json() : null);
+    setAuditLogs(auditResponse.ok ? (await auditResponse.json()).logs : []);
     setLoading(false);
   }
 
@@ -556,7 +600,7 @@ export function AdminDashboard() {
       return;
     }
 
-    setMessage("Buchung gelöscht.");
+    setMessage("Buchung storniert und archiviert.");
     await loadAdminData();
   }
 
@@ -740,6 +784,8 @@ export function AdminDashboard() {
         maxActiveBookingsPerUser: Number(editableSettings.maxActiveBookingsPerUser),
         maxAdvanceBookingDaysMember: Number(editableSettings.maxAdvanceBookingDaysMember),
         maxAdvanceBookingDaysGuest: Number(editableSettings.maxAdvanceBookingDaysGuest),
+        guestDataRetentionDays: Number(editableSettings.guestDataRetentionDays),
+        reminderHoursBefore: Number(editableSettings.reminderHoursBefore),
         matchBlockDurationHours: Number(editableSettings.matchBlockDurationHours),
         matchBlockDefaultStartTime: editableSettings.matchBlockDefaultStartTime,
         matchBlockCourtIds: editableSettings.matchBlockCourtIds,
@@ -825,6 +871,47 @@ export function AdminDashboard() {
       </div>
 
       {message ? <p className={message.includes("konnte") || message.includes("Kein") ? "form-error" : "form-success"}>{message}</p> : null}
+
+      {activeTab === "Übersicht" ? (
+        <div className="admin-overview">
+          <div className="admin-metric-grid">
+            <article><span>Heute</span><strong>{dashboardStats.today}</strong><small>bestätigte Buchungen</small></article>
+            <article><span>Kommend</span><strong>{dashboardStats.upcoming}</strong><small>bestätigte Termine</small></article>
+            <article><span>Gastumsatz im Monat</span><strong>{euroLabel(dashboardStats.monthlyRevenueCents)}</strong><small>bezahlte Buchungen</small></article>
+            <article><span>Zahlungen prüfen</span><strong>{dashboardStats.paymentIssues}</strong><small>offen oder fehlgeschlagen</small></article>
+            <article><span>E-Mail-Probleme</span><strong>{dashboardStats.emailIssues}</strong><small>werden automatisch erneut versucht</small></article>
+            <article><span>Mitglieder prüfen</span><strong>{dashboardStats.pendingMembers}</strong><small>offene Freigaben</small></article>
+          </div>
+          <section className="admin-list overview-attention">
+            <div className="section-heading-row">
+              <h2>Handlungsbedarf</h2>
+              <button className="ghost-button" onClick={() => setActiveTab("Buchungen")} type="button">Alle Buchungen</button>
+            </div>
+            {bookings.filter((booking) => booking.paymentStatus === "FAILED" || booking.paymentStatus === "PENDING" || booking.lastEmailError).slice(0, 12).map((booking) => (
+              <article className="admin-row" key={booking.id}>
+                <div>
+                  <strong>{booking.bookingCode ?? booking.id} · {booking.court?.name}</strong>
+                  <p>{formatDateTime(booking.startTime, booking.endTime)}</p>
+                  <small>{booking.lastEmailError ? `E-Mail: ${booking.lastEmailError}` : `Zahlung: ${booking.paymentStatus}`}</small>
+                </div>
+              </article>
+            ))}
+            {!dashboardStats.paymentIssues && !dashboardStats.emailIssues ? <p className="form-success">Aktuell gibt es keine offenen Zahlungs- oder E-Mail-Probleme.</p> : null}
+          </section>
+          <section className="admin-list overview-attention">
+            <div className="section-heading-row"><h2>Letzte Admin-Aktivitäten</h2><span>{auditLogs.length} Einträge</span></div>
+            {auditLogs.slice(0, 12).map((entry) => (
+              <article className="admin-row" key={entry.id}>
+                <div>
+                  <strong>{entry.action.replaceAll("_", " ")}</strong>
+                  <p>{entry.actor?.name ?? "System"} · {entry.entityType}{entry.entityId ? ` · ${entry.entityId}` : ""}</p>
+                  <small>{formatDateTimeLocal(entry.createdAt)}</small>
+                </div>
+              </article>
+            ))}
+          </section>
+        </div>
+      ) : null}
 
       {activeTab === "Buchungen" ? (
         <div className="admin-two-column">
@@ -917,7 +1004,7 @@ export function AdminDashboard() {
                     <option value="CANCELLED">Storniert</option>
                   </select>
                   <button className="ghost-button danger" onClick={() => deleteBooking(booking.id)}>
-                    Löschen
+                    Archivieren
                   </button>
                 </div>
               </article>
@@ -1380,6 +1467,29 @@ export function AdminDashboard() {
                 min="1"
                 value={editableSettings.maxAdvanceBookingDaysGuest}
                 onChange={(event) => setEditableSettings({ ...editableSettings, maxAdvanceBookingDaysGuest: event.target.value })}
+              />
+            </label>
+          </div>
+          <h3>Datenschutz und Benachrichtigungen</h3>
+          <div className="form-row">
+            <label>
+              Gastdaten anonymisieren nach Tagen
+              <input
+                type="number"
+                min="30"
+                max="1095"
+                value={editableSettings.guestDataRetentionDays}
+                onChange={(event) => setEditableSettings({ ...editableSettings, guestDataRetentionDays: event.target.value })}
+              />
+            </label>
+            <label>
+              Erinnerung vor Termin in Stunden
+              <input
+                type="number"
+                min="1"
+                max="72"
+                value={editableSettings.reminderHoursBefore}
+                onChange={(event) => setEditableSettings({ ...editableSettings, reminderHoursBefore: event.target.value })}
               />
             </label>
           </div>

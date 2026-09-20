@@ -877,7 +877,11 @@ export function BookingBoard() {
             </label>
             <label className="guest-privacy-check">
               <input checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} type="checkbox" />
-              <span>Meine Daten dürfen zur Abwicklung dieser Buchung und Zahlung verarbeitet werden.</span>
+              <span>
+                Meine Daten dürfen zur Abwicklung dieser Buchung und Zahlung verarbeitet werden. Ich akzeptiere die{" "}
+                <a href="/buchungsbedingungen" target="_blank" rel="noreferrer">Buchungsbedingungen</a> und habe die{" "}
+                <a href="/datenschutz" target="_blank" rel="noreferrer">Datenschutzhinweise</a> gelesen.
+              </span>
             </label>
             <small>Es wird kein Benutzerkonto angelegt. Die Buchungsbestätigung kommt per E-Mail.</small>
           </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
+import { writeAuditLog } from "@/lib/audit";
 
 const contractTypes = ["FULL_MEMBER", "FAMILY_MEMBER", "PASSIVE_MEMBER", "YOUTH_MEMBER", "SEASON_CARD", "NONE"] as const;
 const keyTypes = ["NONE", "MAIN_CHANGING_COURTS", "MAIN_CHANGING_COURTS_CLUBROOM"] as const;
@@ -114,6 +115,15 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
         data: { teamPlayerId: uniqueIds[0] ?? null }
       });
     }
+
+    await writeAuditLog({
+      actorUserId: admin.id,
+      action: "USER_UPDATED",
+      entityType: "User",
+      entityId: id,
+      details: { changedFields: Object.keys(body).sort() },
+      request
+    });
 
     return NextResponse.json({ user });
   });

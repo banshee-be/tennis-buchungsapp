@@ -54,6 +54,7 @@ model User {
   resetTokens      PasswordResetToken[]
   teamPlayer       TeamPlayer?      @relation(fields: [teamPlayerId], references: [id], onDelete: SetNull)
   teamPlayerLinks  UserTeamPlayer[]
+  auditLogs        AuditLog[]
 }
 
 model Court {
@@ -85,6 +86,11 @@ model Booking {
   expiresAt        DateTime?
   cancelReason     String?
   confirmationEmailSentAt DateTime?
+  reminderEmailSentAt DateTime?
+  lastEmailError   String?
+  emailRetryCount  Int           @default(0)
+  archivedAt       DateTime?
+  guestDataAnonymizedAt DateTime?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
   user             User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -144,6 +150,8 @@ model Settings {
   maxActiveBookingsPerUser  Int      @default(3)
   maxAdvanceBookingDaysMember Int    @default(7)
   maxAdvanceBookingDaysGuest  Int    @default(3)
+  guestDataRetentionDays      Int    @default(180)
+  reminderHoursBefore         Int    @default(24)
   matchBlockDurationHours     Int    @default(6)
   matchBlockDefaultStartTime  String @default("09:00")
   matchBlockCourtIds          String @default("1,2,3,4")
@@ -152,6 +160,31 @@ model Settings {
   cancellationRules         String   @default("Kostenfreie Stornierung bis 24 Stunden vor Spielbeginn.")
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  details     Json?
+  ipAddress   String?
+  createdAt   DateTime @default(now())
+  actor       User?    @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
 }
 
 model CourtBlock {

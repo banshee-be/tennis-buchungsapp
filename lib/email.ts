@@ -23,7 +23,10 @@ type GuestBookingConfirmation = {
   endTime: Date;
   totalAmountCents: number;
   cancellationUrl: string;
+  calendarUrl: string;
 };
+
+type BookingReminder = GuestBookingConfirmation;
 
 export function getPublicAppUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000";
@@ -61,14 +64,32 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#039;");
 }
 
-async function sendEmail({ to, subject, text, html }: { to: string[] | string; subject: string; text: string; html?: string }) {
+async function sendEmail({
+  to,
+  subject,
+  text,
+  html,
+  idempotencyKey
+}: {
+  to: string[] | string;
+  subject: string;
+  text: string;
+  html?: string;
+  idempotencyKey?: string;
+}) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.EMAIL_FROM;
 
   if (apiKey && from) {
     const resend = new Resend(apiKey);
-    await resend.emails.send({ from, to, subject, text, html });
-    return;
+    const result = await resend.emails.send(
+      { from, to, subject, text, html },
+      idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : undefined
+    );
+    if (result.error) {
+      throw new Error(`E-Mail-Versand fehlgeschlagen: ${result.error.message}`);
+    }
+    return result.data?.id ?? null;
   }
 
   if (process.env.NODE_ENV !== "production") {
@@ -172,6 +193,9 @@ Bezahlt: ${price} über PayPal
 Buchung stornieren:
 ${booking.cancellationUrl}
 
+Zum Kalender hinzufügen:
+${booking.calendarUrl}
+
 Bitte bewahren Sie die Buchungsnummer auf.`;
   const html = `
     <h1>Buchung bestätigt</h1>
@@ -182,6 +206,7 @@ Bitte bewahren Sie die Buchungsnummer auf.`;
     <strong>Termin:</strong> ${escapeHtml(date)}, ${start} bis ${end} Uhr<br>
     <strong>Bezahlt:</strong> ${escapeHtml(price)} über PayPal</p>
     <p><a href="${escapeHtml(booking.cancellationUrl)}">Buchung stornieren</a></p>
+    <p><a href="${escapeHtml(booking.calendarUrl)}">Termin zum Kalender hinzufügen</a></p>
     <p>Bitte bewahren Sie die Buchungsnummer auf.</p>
   `;
 
@@ -189,6 +214,44 @@ Bitte bewahren Sie die Buchungsnummer auf.`;
     to: booking.email,
     subject: `Tennisplatz-Buchung ${booking.bookingCode} bestätigt`,
     text,
-    html
+    html,
+    idempotencyKey: `guest-confirmation-${booking.bookingCode}`
+  });
+}
+
+export async function sendBookingReminderEmail(booking: BookingReminder) {
+  const date = new Intl.DateTimeFormat("de-DE", { dateStyle: "full", timeZone: "UTC" }).format(booking.startTime);
+  const start = booking.startTime.toISOString().slice(11, 16);
+  const end = booking.endTime.toISOString().slice(11, 16);
+  const text = `Hallo ${booking.name},
+
+zur Erinnerung: Ihre Tennisplatz-Buchung findet bald statt.
+
+Buchungsnummer: ${booking.bookingCode}
+Platz: ${booking.courtName}
+Termin: ${date}, ${start} bis ${end} Uhr
+
+Zum Kalender hinzufügen:
+${booking.calendarUrl}
+
+Buchung stornieren:
+${booking.cancellationUrl}`;
+  const html = `
+    <h1>Erinnerung an Ihre Tennisplatz-Buchung</h1>
+    <p>Hallo ${escapeHtml(booking.name)},</p>
+    <p>Ihre Tennisplatz-Buchung findet bald statt.</p>
+    <p><strong>Buchungsnummer:</strong> ${escapeHtml(booking.bookingCode)}</p>
+    <p><strong>Platz:</strong> ${escapeHtml(booking.courtName)}<br>
+    <strong>Termin:</strong> ${escapeHtml(date)}, ${start} bis ${end} Uhr</p>
+    <p><a href="${escapeHtml(booking.calendarUrl)}">Termin zum Kalender hinzufügen</a></p>
+    <p><a href="${escapeHtml(booking.cancellationUrl)}">Buchung stornieren</a></p>
+  `;
+
+  await sendEmail({
+    to: booking.email,
+    subject: `Erinnerung: Tennisplatz-Buchung ${booking.bookingCode}`,
+    text,
+    html,
+    idempotencyKey: `guest-reminder-${booking.bookingCode}`
   });
 }

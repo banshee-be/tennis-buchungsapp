@@ -20,7 +20,11 @@ export type SessionUser = {
 };
 
 function getSecret() {
-  return process.env.AUTH_SECRET || "dev-secret-change-me-before-production";
+  const secret = process.env.AUTH_SECRET;
+  if (!secret && process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_SECRET fehlt in der Produktionsumgebung.");
+  }
+  return secret || "dev-secret-change-me-before-production";
 }
 
 function sign(payload: string) {
@@ -67,7 +71,7 @@ export async function createSession(
     sameSite: embeddedCookieMode ? "none" : "lax",
     secure: process.env.NODE_ENV === "production" || embeddedCookieMode,
     path: "/",
-    maxAge: 60 * 60 * 24 * 30
+    maxAge: user.role === "ADMIN" ? 60 * 60 * 12 : 60 * 60 * 24 * 30
   });
 }
 
