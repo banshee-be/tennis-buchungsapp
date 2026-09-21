@@ -3,6 +3,21 @@ import { prisma } from "@/lib/prisma";
 
 type RateLimitRow = { count: number; resetAt: Date };
 
+export async function getRateLimitStatus(key: string, limit = 5) {
+  const current = await prisma.rateLimitBucket.findUnique({ where: { key }, select: { count: true, resetAt: true } });
+  const now = new Date();
+  const active = Boolean(current && current.resetAt > now);
+  return {
+    limited: Boolean(active && current && current.count >= limit),
+    remaining: active ? Math.max(0, limit - (current?.count ?? 0)) : limit,
+    resetAt: active ? current?.resetAt ?? now : now
+  };
+}
+
+export async function clearRateLimit(key: string) {
+  await prisma.rateLimitBucket.deleteMany({ where: { key } });
+}
+
 export function getClientIp(request: Request) {
   return (
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
@@ -32,7 +47,7 @@ export async function checkRateLimit(key: string, limit = 5, windowMs = 15 * 60_
   const current = rows[0];
 
   return {
-    limited: Boolean(current && current.count > limit),
+    limited: Boolean(current && current.count >= limit),
     remaining: Math.max(0, limit - (current?.count ?? 1)),
     resetAt: current?.resetAt ?? resetAt
   };
