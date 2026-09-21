@@ -214,6 +214,13 @@ type AuditLog = {
   actor?: { name: string; email: string } | null;
 };
 
+type DuplicatePair = {
+  left: { id: string; name: string; email: string };
+  right: { id: string; name: string; email: string };
+  score: number;
+  reasons: string[];
+};
+
 type Permission = "admin.access" | "members.read" | "members.write" | "members.export" | "members.roles" | "members.finance" | "members.keys" | "members.sports" | "bookings.manage" | "courts.read" | "courts.manage" | "settings.manage";
 
 const tabs = ["Übersicht", "Buchungen", "Mitglieder", "Preise & Zeiten", "Plätze & Sperren"] as const;
@@ -399,6 +406,7 @@ export function AdminDashboard() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [permissions, setPermissions] = useState<Permission[]>([]);
+  const [duplicatePairs, setDuplicatePairs] = useState<DuplicatePair[]>([]);
   const [bookingForm, setBookingForm] = useState({
     name: "",
     email: "",
@@ -589,6 +597,12 @@ export function AdminDashboard() {
     setNuLigaSummary(nuligaResponse.ok ? await nuligaResponse.json() : null);
     setNuLigaMatchSummary(nuligaMatchesResponse.ok ? await nuligaMatchesResponse.json() : null);
     setAuditLogs(auditResponse.ok ? (await auditResponse.json()).logs : []);
+    if (can("members.roles")) {
+      const duplicateResponse = await fetch("/api/admin/users/duplicates", { cache: "no-store" });
+      setDuplicatePairs(duplicateResponse.ok ? (await duplicateResponse.json()).duplicates ?? [] : []);
+    } else {
+      setDuplicatePairs([]);
+    }
     setLoading(false);
     return usersData.users as User[];
   }
@@ -740,6 +754,19 @@ export function AdminDashboard() {
     const refreshedUsers = await loadAdminData();
     const refreshed = refreshedUsers.find((user) => user.id === editingUser.id);
     if (refreshed) openUserPanel(refreshed);
+  }
+
+  async function mergeDuplicate(source: DuplicatePair["left"], target: DuplicatePair["right"]) {
+    const confirmation = window.prompt(`„${source.name}“ wird archiviert und in „${target.name}“ übernommen. Zum Bestätigen ZUSAMMENFÜHREN eingeben.`);
+    if (confirmation !== "ZUSAMMENFÜHREN") return;
+    const response = await fetch("/api/admin/users/duplicates/merge", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sourceUserId: source.id, targetUserId: target.id, confirmation })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { setMessage(data.error ?? "Dubletten konnten nicht zusammengeführt werden."); return; }
+    setMessage("Mitgliederprofile wurden revisionssicher zusammengeführt.");
+    await loadAdminData();
   }
 
   async function importNuLigaData() {
@@ -1177,6 +1204,23 @@ export function AdminDashboard() {
             </div>
             <button className="button primary" type="submit">Mitglied anlegen</button>
           </form> : null}
+          {permissions.includes("members.roles") && duplicatePairs.length ? (
+            <section className="admin-import-card">
+              <div><p className="eyebrow">Dublettenprüfung</p><h3>{duplicatePairs.length} mögliche Dublette{duplicatePairs.length === 1 ? "" : "n"}</h3><small>Zusammenführen überträgt Historien in das Zielprofil und archiviert die Quelle anonymisiert. Beitragskonflikte werden automatisch blockiert.</small></div>
+              <div className="linked-player-list">
+                {duplicatePairs.slice(0, 10).map((pair) => (
+                  <div className="linked-player-card" key={`${pair.left.id}-${pair.right.id}`}>
+                    <strong>{pair.left.name} ↔ {pair.right.name}</strong>
+                    <small>{pair.reasons.join(", ")} · Trefferwert {pair.score}</small>
+                    <div className="row-actions">
+                      <button className="table-action-button" onClick={() => mergeDuplicate(pair.left, pair.right)} type="button">Links in rechts übernehmen</button>
+                      <button className="table-action-button" onClick={() => mergeDuplicate(pair.right, pair.left)} type="button">Rechts in links übernehmen</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
           <section className="admin-import-card">
             <div>
               <p className="eyebrow">nuLiga Import</p>
