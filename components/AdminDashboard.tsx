@@ -24,11 +24,26 @@ type User = {
   name: string;
   email: string;
   phoneNumber?: string | null;
-  role: "USER" | "ADMIN";
+  role: "USER" | "ADMIN" | "SUPER_ADMIN" | "MEMBER_MANAGER" | "SPORTS_MANAGER" | "TREASURER" | "COURT_MANAGER";
   isActive: boolean;
+  hasAccount?: boolean;
   membershipType: "MEMBER" | "EXTERNAL";
   membershipStatus: "PENDING" | "VERIFIED" | "REJECTED";
   memberNumber?: string | null;
+  birthDate?: string | null;
+  street?: string | null;
+  addressAdditional?: string | null;
+  postalCode?: string | null;
+  city?: string | null;
+  country?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  lifecycleStatus: "ACTIVE" | "PAUSED" | "RESIGNED" | "ENDED" | "ARCHIVED";
+  joinedAt?: string | null;
+  leftAt?: string | null;
+  resignationAt?: string | null;
+  resignationReason?: string | null;
+  archivedAt?: string | null;
   teamPlayerId?: string | null;
   contractType: ContractType;
   contractStartDate?: string | null;
@@ -58,6 +73,10 @@ type User = {
   } | null;
   teamPlayers?: TeamPlayerOption[];
   bookingCount: number;
+  contributions?: Array<{ id: string; year: number; amountDueCents: number; amountPaidCents: number; status: string; dueDate?: string | null; paidAt?: string | null; paymentMethod?: string | null; isExempt: boolean; note?: string | null }>;
+  workHourEntries?: Array<{ id: string; minutes: number; activity: string; performedAt: string; correctionReason?: string | null }>;
+  keyAssignments?: Array<{ id: string; keyType: KeyType; keyNumber?: string | null; issuedAt: string; returnedAt?: string | null; depositCents?: number | null; depositStatus: string; note?: string | null }>;
+  memberEmails?: Array<{ id: string; kind: string; status: string; error?: string | null; sentAt?: string | null; createdAt: string }>;
 };
 
 type UserDraft = Partial<User> & { teamPlayerIds?: string[] };
@@ -195,10 +214,12 @@ type AuditLog = {
   actor?: { name: string; email: string } | null;
 };
 
-const tabs = ["Übersicht", "Buchungen", "Nutzer", "Preise & Zeiten", "Plätze & Sperren"] as const;
+type Permission = "admin.access" | "members.read" | "members.write" | "members.export" | "members.roles" | "members.finance" | "members.keys" | "members.sports" | "bookings.manage" | "courts.read" | "courts.manage" | "settings.manage";
+
+const tabs = ["Übersicht", "Buchungen", "Mitglieder", "Preise & Zeiten", "Plätze & Sperren"] as const;
 type Tab = (typeof tabs)[number];
-type DetailTab = "Übersicht" | "Vertrag" | "Schlüssel" | "nuLiga" | "Buchungen" | "Notizen";
-const detailTabs: DetailTab[] = ["Übersicht", "Vertrag", "Schlüssel", "nuLiga", "Buchungen", "Notizen"];
+type DetailTab = "Übersicht" | "Vertrag" | "Beiträge" | "Arbeitsstunden" | "Schlüssel" | "nuLiga" | "Buchungen" | "Kommunikation" | "Notizen";
+const detailTabs: DetailTab[] = ["Übersicht", "Vertrag", "Beiträge", "Arbeitsstunden", "Schlüssel", "nuLiga", "Buchungen", "Kommunikation", "Notizen"];
 
 const contractOptions: Record<ContractType, { label: string; shortLabel: string; feeCents: number | null; workHours?: number; hint?: string }> = {
   FULL_MEMBER: { label: "Vollmitglied", shortLabel: "Vollmitglied", feeCents: 12000, workHours: 6 },
@@ -362,15 +383,22 @@ export function AdminDashboard() {
   const [keyFilter, setKeyFilter] = useState<KeyType | "ALL" | "WITH_KEY" | "WITHOUT_KEY">("ALL");
   const [memberFilter, setMemberFilter] = useState<"ALL" | "PENDING" | "VERIFIED_MEMBER" | "EXTERNAL" | "REJECTED">("ALL");
   const [teamFilter, setTeamFilter] = useState<"ALL" | "NONE" | "POSSIBLE" | "LINKED" | string>("ALL");
-  const [roleFilter, setRoleFilter] = useState<"ALL" | "USER" | "ADMIN">("ALL");
+  const [roleFilter, setRoleFilter] = useState<"ALL" | User["role"]>("ALL");
   const [teamRosterFilter, setTeamRosterFilter] = useState("Alle");
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [userDraft, setUserDraft] = useState<UserDraft>({});
   const [detailTab, setDetailTab] = useState<DetailTab>("Übersicht");
+  const [memberPage, setMemberPage] = useState(1);
+  const memberPageSize = 20;
+  const [newMember, setNewMember] = useState({ name: "", email: "", phoneNumber: "", memberNumber: "" });
+  const [workHourForm, setWorkHourForm] = useState({ minutes: "60", activity: "", performedAt: today(), correctionReason: "" });
+  const [contributionForm, setContributionForm] = useState({ year: String(new Date().getFullYear()), amountDue: "", amountPaid: "", status: "OPEN" });
+  const [keyRecordForm, setKeyRecordForm] = useState({ keyType: "MAIN_CHANGING_COURTS" as Exclude<KeyType, "NONE">, keyNumber: "", issuedAt: today(), deposit: "" });
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(null);
   const [importingCsv, setImportingCsv] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [permissions, setPermissions] = useState<Permission[]>([]);
   const [bookingForm, setBookingForm] = useState({
     name: "",
     email: "",
@@ -461,6 +489,10 @@ export function AdminDashboard() {
     [teamPlayers]
   );
 
+  useEffect(() => setMemberPage(1), [searchTerm, contractFilter, keyFilter, memberFilter, teamFilter, roleFilter]);
+  const memberPageCount = Math.max(1, Math.ceil(filteredUsers.length / memberPageSize));
+  const pagedUsers = filteredUsers.slice((memberPage - 1) * memberPageSize, memberPage * memberPageSize);
+
   const dashboardStats = useMemo(() => {
     const now = new Date();
     const todayStart = new Date(now);
@@ -481,6 +513,11 @@ export function AdminDashboard() {
       paymentIssues: bookings.filter((booking) => booking.paymentStatus === "FAILED" || booking.paymentStatus === "PENDING").length,
       emailIssues: bookings.filter((booking) => Boolean(booking.lastEmailError)).length,
       pendingMembers: users.filter((user) => user.membershipType === "MEMBER" && user.membershipStatus === "PENDING").length
+      ,activeMembers: users.filter((user) => user.membershipType === "MEMBER" && user.lifecycleStatus === "ACTIVE").length
+      ,pausedMembers: users.filter((user) => user.lifecycleStatus === "PAUSED").length
+      ,openContributions: users.flatMap((user) => user.contributions ?? []).filter((entry) => entry.status === "OPEN" || entry.amountPaidCents < entry.amountDueCents).length
+      ,openWorkHours: users.filter((user) => (user.workHoursRequired ?? 0) > user.workHoursDone).length
+      ,keyReturns: users.filter((user) => user.lifecycleStatus !== "ACTIVE" && user.hasKey).length
     };
   }, [bookings, users]);
 
@@ -504,24 +541,35 @@ export function AdminDashboard() {
   async function loadAdminData() {
     setLoading(true);
     setMessage("");
+    const sessionResponse = await fetch("/api/auth/me", { cache: "no-store" });
+    const sessionData = await sessionResponse.json().catch(() => ({ user: null }));
+    const currentPermissions = (sessionData.user?.permissions ?? []) as Permission[];
+    setPermissions(currentPermissions);
+    if (!currentPermissions.includes("admin.access")) {
+      setMessage("Kein Zugriff. Bitte mit einer Admin-Rolle einloggen.");
+      setLoading(false);
+      return [] as User[];
+    }
+    const can = (permission: Permission) => currentPermissions.includes(permission);
+    const emptyResponse = (body: object) => Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } }));
     const endpoints = [
-      fetch("/api/admin/bookings", { cache: "no-store" }),
+      can("bookings.manage") ? fetch("/api/admin/bookings", { cache: "no-store" }) : emptyResponse({ bookings: [] }),
       fetch("/api/admin/users", { cache: "no-store" }),
-      fetch("/api/admin/courts", { cache: "no-store" }),
-      fetch("/api/admin/blocks", { cache: "no-store" }),
-      fetch("/api/admin/settings", { cache: "no-store" }),
-      fetch("/api/admin/nuliga/import", { cache: "no-store" }),
-      fetch("/api/admin/nuliga/matches", { cache: "no-store" }),
-      fetch("/api/admin/audit", { cache: "no-store" })
+      can("courts.read") ? fetch("/api/admin/courts", { cache: "no-store" }) : emptyResponse({ courts: [] }),
+      can("courts.manage") ? fetch("/api/admin/blocks", { cache: "no-store" }) : emptyResponse({ blocks: [] }),
+      can("settings.manage") ? fetch("/api/admin/settings", { cache: "no-store" }) : emptyResponse({ settings: null }),
+      can("members.sports") ? fetch("/api/admin/nuliga/import", { cache: "no-store" }) : emptyResponse(null as unknown as object),
+      can("members.sports") ? fetch("/api/admin/nuliga/matches", { cache: "no-store" }) : emptyResponse(null as unknown as object),
+      can("settings.manage") ? fetch("/api/admin/audit", { cache: "no-store" }) : emptyResponse({ logs: [] })
     ];
     const [bookingsResponse, usersResponse, courtsResponse, blocksResponse, settingsResponse, nuligaResponse, nuligaMatchesResponse, auditResponse] =
       await Promise.all(endpoints);
 
-    if (!bookingsResponse.ok) {
-      const data = await bookingsResponse.json().catch(() => ({}));
+    if (!usersResponse.ok) {
+      const data = await usersResponse.json().catch(() => ({}));
       setMessage(data.error ?? "Kein Zugriff. Bitte als Admin einloggen.");
       setLoading(false);
-      return;
+      return [] as User[];
     }
 
     const [bookingsData, usersData, courtsData, blocksData, settingsData] = await Promise.all([
@@ -542,6 +590,7 @@ export function AdminDashboard() {
     setNuLigaMatchSummary(nuligaMatchesResponse.ok ? await nuligaMatchesResponse.json() : null);
     setAuditLogs(auditResponse.ok ? (await auditResponse.json()).logs : []);
     setLoading(false);
+    return usersData.users as User[];
   }
 
   useEffect(() => {
@@ -619,6 +668,78 @@ export function AdminDashboard() {
 
     setMessage("Nutzer aktualisiert.");
     await loadAdminData();
+  }
+
+  async function createMember(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const response = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newMember)
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.error ?? "Mitglied konnte nicht angelegt werden.");
+      return;
+    }
+    setNewMember({ name: "", email: "", phoneNumber: "", memberNumber: "" });
+    setMessage("Mitglied wurde angelegt und wartet auf Freigabe.");
+    await loadAdminData();
+  }
+
+  async function runMemberAction(user: User, action: "approve" | "reject" | "pause" | "resign" | "reactivate" | "archive" | "invite" | "password_reset") {
+    let reason: string | undefined;
+    if (action === "resign") {
+      const value = window.prompt("Austrittsgrund (optional)", "");
+      if (value === null) return;
+      reason = value;
+    }
+    const response = await fetch(`/api/admin/users/${user.id}/actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.error ?? "Aktion konnte nicht ausgeführt werden.");
+      return;
+    }
+    const labels = { approve: "Mitglied bestätigt", reject: "Mitglied abgelehnt", pause: "Mitgliedschaft pausiert", resign: "Austritt erfasst", reactivate: "Mitglied reaktiviert", archive: "Mitglied archiviert", invite: "Einladung versendet", password_reset: "Passwort-Link versendet" };
+    setMessage(`${labels[action]}${data.emailStatus === "FAILED" ? ", aber die E-Mail konnte nicht versendet werden" : ""}.`);
+    setEditingUser(null);
+    await loadAdminData();
+  }
+
+  async function addMemberRecord(type: "CONTRIBUTION" | "WORK_HOUR" | "KEY_ASSIGNMENT", payload: Record<string, unknown>) {
+    if (!editingUser) return;
+    const response = await fetch(`/api/admin/users/${editingUser.id}/records`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, ...payload })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      setMessage(data.error ?? "Eintrag konnte nicht gespeichert werden.");
+      return;
+    }
+    setMessage("Eintrag gespeichert.");
+    const refreshedUsers = await loadAdminData();
+    const refreshed = refreshedUsers.find((user) => user.id === editingUser.id);
+    if (refreshed) openUserPanel(refreshed);
+  }
+
+  async function returnMemberKey(recordId: string) {
+    if (!editingUser) return;
+    const response = await fetch(`/api/admin/users/${editingUser.id}/records`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "KEY_ASSIGNMENT", recordId, returnedAt: today(), depositStatus: "RETURNED" })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) { setMessage(data.error ?? "Schlüsselrückgabe konnte nicht gespeichert werden."); return; }
+    setMessage("Schlüsselrückgabe gespeichert.");
+    const refreshedUsers = await loadAdminData();
+    const refreshed = refreshedUsers.find((user) => user.id === editingUser.id);
+    if (refreshed) openUserPanel(refreshed);
   }
 
   async function importNuLigaData() {
@@ -724,7 +845,12 @@ export function AdminDashboard() {
     if (!editingUser) {
       return;
     }
-    await updateUser(editingUser, userDraft);
+    const patch = permissions.includes("members.write")
+      ? userDraft
+      : permissions.includes("members.sports")
+        ? { teamPlayerIds: userDraft.teamPlayerIds }
+        : {};
+    await updateUser(editingUser, patch);
     setEditingUser(null);
     setUserDraft({});
   }
@@ -860,10 +986,24 @@ export function AdminDashboard() {
     return <div className="loading-box">Admin-Bereich wird geladen...</div>;
   }
 
+  const visibleTabs = tabs.filter((tab) =>
+    tab === "Übersicht" || tab === "Mitglieder" ||
+    (tab === "Buchungen" && permissions.includes("bookings.manage")) ||
+    (tab === "Preise & Zeiten" && permissions.includes("settings.manage")) ||
+    (tab === "Plätze & Sperren" && permissions.includes("courts.manage"))
+  );
+  const visibleDetailTabs = detailTabs.filter((tab) => {
+    if (tab === "Beiträge") return permissions.includes("members.finance");
+    if (tab === "Arbeitsstunden" || tab === "Kommunikation" || tab === "Notizen") return permissions.includes("members.write");
+    if (tab === "Schlüssel") return permissions.includes("members.keys");
+    if (tab === "nuLiga") return permissions.includes("members.sports") || permissions.includes("members.write");
+    return true;
+  });
+
   return (
     <div className="admin-layout">
       <div className="admin-tabs">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button className={activeTab === tab ? "active" : ""} key={tab} onClick={() => setActiveTab(tab)}>
             {tab}
           </button>
@@ -881,6 +1021,10 @@ export function AdminDashboard() {
             <article><span>Zahlungen prüfen</span><strong>{dashboardStats.paymentIssues}</strong><small>offen oder fehlgeschlagen</small></article>
             <article><span>E-Mail-Probleme</span><strong>{dashboardStats.emailIssues}</strong><small>werden automatisch erneut versucht</small></article>
             <article><span>Mitglieder prüfen</span><strong>{dashboardStats.pendingMembers}</strong><small>offene Freigaben</small></article>
+            <article><span>Aktive Mitglieder</span><strong>{dashboardStats.activeMembers}</strong><small>{dashboardStats.pausedMembers} pausiert</small></article>
+            <article><span>Offene Beiträge</span><strong>{dashboardStats.openContributions}</strong><small>Beitragskonten prüfen</small></article>
+            <article><span>Arbeitsstunden</span><strong>{dashboardStats.openWorkHours}</strong><small>Mitglieder mit Reststunden</small></article>
+            <article><span>Schlüsselrückgabe</span><strong>{dashboardStats.keyReturns}</strong><small>bei inaktiven Mitgliedern</small></article>
           </div>
           <section className="admin-list overview-attention">
             <div className="section-heading-row">
@@ -1013,12 +1157,26 @@ export function AdminDashboard() {
         </div>
       ) : null}
 
-      {activeTab === "Nutzer" ? (
+      {activeTab === "Mitglieder" ? (
         <div className="admin-list member-admin">
           <div className="section-heading-row">
             <h2>Mitgliederverwaltung</h2>
             <span>{filteredUsers.length} von {users.length} Nutzern</span>
           </div>
+          {permissions.includes("members.write") ? <form className="admin-import-card" onSubmit={createMember}>
+            <div>
+              <p className="eyebrow">Manuell anlegen</p>
+              <h3>Neues Mitglied</h3>
+              <small>Das Konto wird zunächst als „in Prüfung“ angelegt. Anschließend kann eine Einladung versendet werden.</small>
+            </div>
+            <div className="form-row">
+              <label>Name<input required value={newMember.name} onChange={(event) => setNewMember({ ...newMember, name: event.target.value })} /></label>
+              <label>E-Mail<input required type="email" value={newMember.email} onChange={(event) => setNewMember({ ...newMember, email: event.target.value })} /></label>
+              <label>Telefon<input value={newMember.phoneNumber} onChange={(event) => setNewMember({ ...newMember, phoneNumber: event.target.value })} /></label>
+              <label>Mitgliedsnummer<input value={newMember.memberNumber} onChange={(event) => setNewMember({ ...newMember, memberNumber: event.target.value })} /></label>
+            </div>
+            <button className="button primary" type="submit">Mitglied anlegen</button>
+          </form> : null}
           <section className="admin-import-card">
             <div>
               <p className="eyebrow">nuLiga Import</p>
@@ -1037,7 +1195,7 @@ export function AdminDashboard() {
                   : ""}
               </small>
             </div>
-            <button className="button primary" disabled={nuligaImporting} onClick={importNuLigaData} type="button">
+            <button className="button primary" disabled={nuligaImporting || !permissions.includes("members.sports")} onClick={importNuLigaData} type="button">
               {nuligaImporting ? "Import läuft..." : nuligaSummary?.lastImportedAt ? "Import aktualisieren" : "nuLiga-Daten importieren"}
             </button>
           </section>
@@ -1068,7 +1226,7 @@ export function AdminDashboard() {
               <small>Letzter Import: {formatDateTimeLocal(nuligaMatchSummary?.lastImportedAt)}</small>
             </div>
             <div className="row-actions">
-              <button className="button primary" disabled={nuligaMatchesImporting} onClick={importNuLigaMatchesData} type="button">
+              <button className="button primary" disabled={nuligaMatchesImporting || !permissions.includes("members.sports")} onClick={importNuLigaMatchesData} type="button">
                 {nuligaMatchesImporting ? "Import läuft..." : "Spieltage importieren"}
               </button>
               <button
@@ -1191,16 +1349,16 @@ export function AdminDashboard() {
           </section>
 
           <div className="admin-actions-bar">
-            <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/export"; }} type="button">
+            {permissions.includes("members.export") ? <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/export"; }} type="button">
               Mitglieder exportieren
-            </button>
-            <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/import-template"; }} type="button">
+            </button> : null}
+            {permissions.includes("members.export") ? <button className="ghost-button" onClick={() => { window.location.href = "/api/admin/users/import-template"; }} type="button">
               CSV-Vorlage herunterladen
-            </button>
-            <label className="ghost-button file-button">
+            </button> : null}
+            {permissions.includes("members.write") ? <label className="ghost-button file-button">
               Mitglieder importieren
               <input accept=".csv,text/csv" type="file" onChange={(event) => void previewCsvImport(event.target.files?.[0] ?? null)} />
-            </label>
+            </label> : null}
           </div>
 
           {importPreview ? (
@@ -1278,6 +1436,10 @@ export function AdminDashboard() {
                 <option value="ALL">Alle</option>
                 <option value="USER">Nutzer</option>
                 <option value="ADMIN">Admin</option>
+                <option value="MEMBER_MANAGER">Mitgliederverwaltung</option>
+                <option value="SPORTS_MANAGER">Sportwart</option>
+                <option value="TREASURER">Kassenwart</option>
+                <option value="COURT_MANAGER">Platzwart</option>
               </select>
             </label>
           </div>
@@ -1299,7 +1461,7 @@ export function AdminDashboard() {
               <span>Registriert</span>
               <span>Aktionen</span>
             </div>
-            {filteredUsers.map((user) => {
+            {pagedUsers.map((user) => {
               const possibleMatches = unlinkedPossibleMatches(user, teamPlayers);
               const contract = contractOptions[user.contractType];
               const requiredHours = contractWorkHours(user);
@@ -1372,6 +1534,11 @@ export function AdminDashboard() {
                 </article>
               );
             })}
+            <div className="admin-actions-bar">
+              <button className="ghost-button" disabled={memberPage <= 1} onClick={() => setMemberPage((page) => page - 1)} type="button">Zurück</button>
+              <span>Seite {memberPage} von {memberPageCount}</span>
+              <button className="ghost-button" disabled={memberPage >= memberPageCount} onClick={() => setMemberPage((page) => page + 1)} type="button">Weiter</button>
+            </div>
           </div>
         </div>
       ) : null}
@@ -1672,7 +1839,7 @@ export function AdminDashboard() {
             </div>
 
             <div className="detail-tabs">
-              {detailTabs.map((tab) => (
+              {visibleDetailTabs.map((tab) => (
                 <button className={detailTab === tab ? "active" : ""} key={tab} onClick={() => setDetailTab(tab)} type="button">
                   {tab}
                 </button>
@@ -1692,6 +1859,20 @@ export function AdminDashboard() {
                   E-Mail
                   <input value={userDraft.email ?? ""} disabled />
                 </label>
+              </div>
+              <div className="form-row">
+                <label>Geburtsdatum<input type="date" value={dateInputValue(userDraft.birthDate)} onChange={(event) => updateDraft({ birthDate: event.target.value || null })} /></label>
+                <label>Straße und Hausnummer<input value={userDraft.street ?? ""} onChange={(event) => updateDraft({ street: event.target.value || null })} /></label>
+                <label>Adresszusatz<input value={userDraft.addressAdditional ?? ""} onChange={(event) => updateDraft({ addressAdditional: event.target.value || null })} /></label>
+              </div>
+              <div className="form-row">
+                <label>PLZ<input value={userDraft.postalCode ?? ""} onChange={(event) => updateDraft({ postalCode: event.target.value || null })} /></label>
+                <label>Ort<input value={userDraft.city ?? ""} onChange={(event) => updateDraft({ city: event.target.value || null })} /></label>
+                <label>Land<input value={userDraft.country ?? "Deutschland"} onChange={(event) => updateDraft({ country: event.target.value || null })} /></label>
+              </div>
+              <div className="form-row">
+                <label>Notfallkontakt<input value={userDraft.emergencyContactName ?? ""} onChange={(event) => updateDraft({ emergencyContactName: event.target.value || null })} /></label>
+                <label>Notfall-Telefon<input value={userDraft.emergencyContactPhone ?? ""} onChange={(event) => updateDraft({ emergencyContactPhone: event.target.value || null })} /></label>
               </div>
               <div className="form-row">
                 <label>
@@ -1734,9 +1915,25 @@ export function AdminDashboard() {
                   Rolle
                   <select value={userDraft.role} onChange={(event) => updateDraft({ role: event.target.value as User["role"] })}>
                     <option value="USER">Nutzer</option>
-                    <option value="ADMIN">Admin</option>
+                    <option value="MEMBER_MANAGER">Mitgliederverwaltung</option>
+                    <option value="SPORTS_MANAGER">Sportwart</option>
+                    <option value="TREASURER">Kassenwart</option>
+                    <option value="COURT_MANAGER">Platzwart</option>
+                    <option value="SUPER_ADMIN">Super-Admin</option>
+                    <option value="ADMIN">Admin (bisherige Rolle)</option>
                   </select>
                 </label>
+                <label>
+                  Lebenszyklus
+                  <select value={userDraft.lifecycleStatus} onChange={(event) => updateDraft({ lifecycleStatus: event.target.value as User["lifecycleStatus"] })}>
+                    <option value="ACTIVE">Aktiv</option><option value="PAUSED">Pausiert</option><option value="RESIGNED">Ausgetreten</option><option value="ENDED">Beendet</option><option value="ARCHIVED">Archiviert</option>
+                  </select>
+                </label>
+              </div>
+              <div className="form-row">
+                <label>Eintritt<input type="date" value={dateInputValue(userDraft.joinedAt)} onChange={(event) => updateDraft({ joinedAt: event.target.value || null })} /></label>
+                <label>Austritt<input type="date" value={dateInputValue(userDraft.leftAt)} onChange={(event) => updateDraft({ leftAt: event.target.value || null })} /></label>
+                <label>Austrittsgrund<input value={userDraft.resignationReason ?? ""} onChange={(event) => updateDraft({ resignationReason: event.target.value || null })} /></label>
               </div>
               <label className="toggle-line">
                 <input checked={userDraft.isActive ?? true} onChange={(event) => updateDraft({ isActive: event.target.checked })} type="checkbox" />
@@ -1748,6 +1945,42 @@ export function AdminDashboard() {
               </small>
             </section>
             </>
+            ) : null}
+
+            {detailTab === "Beiträge" ? (
+            <section className="detail-section">
+              <h3>Beiträge</h3>
+              <div className="linked-player-list">
+                {(editingUser.contributions ?? []).map((entry) => (
+                  <div className="linked-player-card" key={entry.id}><strong>{entry.year}: {euroLabel(entry.amountPaidCents)} von {euroLabel(entry.amountDueCents)}</strong><small>Status {entry.status}{entry.paidAt ? ` · bezahlt ${dateInputValue(entry.paidAt)}` : ""}</small></div>
+                ))}
+                {!editingUser.contributions?.length ? <small>Noch keine Beitragshistorie.</small> : null}
+              </div>
+              <div className="form-row">
+                <label>Jahr<input type="number" value={contributionForm.year} onChange={(event) => setContributionForm({ ...contributionForm, year: event.target.value })} /></label>
+                <label>Sollbetrag €<input inputMode="decimal" value={contributionForm.amountDue} onChange={(event) => setContributionForm({ ...contributionForm, amountDue: event.target.value })} /></label>
+                <label>Bezahlt €<input inputMode="decimal" value={contributionForm.amountPaid} onChange={(event) => setContributionForm({ ...contributionForm, amountPaid: event.target.value })} /></label>
+                <label>Status<select value={contributionForm.status} onChange={(event) => setContributionForm({ ...contributionForm, status: event.target.value })}><option value="OPEN">Offen</option><option value="PAID">Bezahlt</option><option value="EXEMPT">Befreit</option><option value="OVERDUE">Überfällig</option></select></label>
+              </div>
+              <button className="ghost-button" onClick={() => addMemberRecord("CONTRIBUTION", { year: Number(contributionForm.year), amountDueCents: centsFromEuro(contributionForm.amountDue || "0"), amountPaidCents: centsFromEuro(contributionForm.amountPaid || "0"), status: contributionForm.status, isExempt: contributionForm.status === "EXEMPT" })} type="button">Beitrag speichern</button>
+            </section>
+            ) : null}
+
+            {detailTab === "Arbeitsstunden" ? (
+            <section className="detail-section">
+              <h3>Arbeitsstunden</h3>
+              <p>{editingUser.workHoursDone} von {editingUser.workHoursRequired ?? 0} Stunden angerechnet.</p>
+              <div className="linked-player-list">
+                {(editingUser.workHourEntries ?? []).map((entry) => <div className="linked-player-card" key={entry.id}><strong>{entry.minutes / 60} Std. · {entry.activity}</strong><small>{dateInputValue(entry.performedAt)}{entry.correctionReason ? ` · Korrektur: ${entry.correctionReason}` : ""}</small></div>)}
+              </div>
+              <div className="form-row">
+                <label>Minuten<input type="number" value={workHourForm.minutes} onChange={(event) => setWorkHourForm({ ...workHourForm, minutes: event.target.value })} /></label>
+                <label>Tätigkeit<input value={workHourForm.activity} onChange={(event) => setWorkHourForm({ ...workHourForm, activity: event.target.value })} /></label>
+                <label>Datum<input type="date" value={workHourForm.performedAt} onChange={(event) => setWorkHourForm({ ...workHourForm, performedAt: event.target.value })} /></label>
+                <label>Korrekturgrund<input value={workHourForm.correctionReason} onChange={(event) => setWorkHourForm({ ...workHourForm, correctionReason: event.target.value })} /></label>
+              </div>
+              <button className="ghost-button" onClick={() => addMemberRecord("WORK_HOUR", { minutes: Number(workHourForm.minutes), activity: workHourForm.activity, performedAt: workHourForm.performedAt, correctionReason: workHourForm.correctionReason || null })} type="button">Arbeitszeit erfassen</button>
+            </section>
             ) : null}
 
             {detailTab === "Vertrag" ? (
@@ -1849,6 +2082,15 @@ export function AdminDashboard() {
                 Schlüsselnotiz
                 <textarea value={userDraft.keyNote ?? ""} onChange={(event) => updateDraft({ keyNote: event.target.value || null })} />
               </label>
+              <h3>Schlüsselhistorie</h3>
+              {(editingUser.keyAssignments ?? []).map((entry) => <div className="linked-player-card" key={entry.id}><strong>{keyOptions[entry.keyType]}{entry.keyNumber ? ` · Nr. ${entry.keyNumber}` : ""}</strong><small>Ausgabe {dateInputValue(entry.issuedAt)}{entry.returnedAt ? ` · Rückgabe ${dateInputValue(entry.returnedAt)}` : " · noch ausgegeben"}</small>{!entry.returnedAt ? <button className="table-action-button" onClick={() => returnMemberKey(entry.id)} type="button">Rückgabe heute</button> : null}</div>)}
+              <div className="form-row">
+                <label>Neue Schlüsselart<select value={keyRecordForm.keyType} onChange={(event) => setKeyRecordForm({ ...keyRecordForm, keyType: event.target.value as Exclude<KeyType, "NONE"> })}><option value="MAIN_CHANGING_COURTS">Haupttür / Plätze</option><option value="MAIN_CHANGING_COURTS_CLUBROOM">inkl. Gastraum</option></select></label>
+                <label>Schlüsselnummer<input value={keyRecordForm.keyNumber} onChange={(event) => setKeyRecordForm({ ...keyRecordForm, keyNumber: event.target.value })} /></label>
+                <label>Ausgabe<input type="date" value={keyRecordForm.issuedAt} onChange={(event) => setKeyRecordForm({ ...keyRecordForm, issuedAt: event.target.value })} /></label>
+                <label>Pfand €<input value={keyRecordForm.deposit} onChange={(event) => setKeyRecordForm({ ...keyRecordForm, deposit: event.target.value })} /></label>
+              </div>
+              <button className="ghost-button" onClick={() => addMemberRecord("KEY_ASSIGNMENT", { keyType: keyRecordForm.keyType, keyNumber: keyRecordForm.keyNumber || null, issuedAt: keyRecordForm.issuedAt, depositCents: keyRecordForm.deposit ? centsFromEuro(keyRecordForm.deposit) : null, depositStatus: keyRecordForm.deposit ? "PAID" : "NOT_REQUIRED" })} type="button">Schlüsselausgabe erfassen</button>
             </section>
             ) : null}
 
@@ -1942,6 +2184,15 @@ export function AdminDashboard() {
             </section>
             ) : null}
 
+            {detailTab === "Kommunikation" ? (
+            <section className="detail-section">
+              <h3>Kommunikation</h3>
+              <div className="row-actions"><button className="ghost-button" onClick={() => runMemberAction(editingUser, "invite")} type="button">Einladung senden</button><button className="ghost-button" onClick={() => runMemberAction(editingUser, "password_reset")} type="button">Passwort-Link senden</button></div>
+              {(editingUser.memberEmails ?? []).map((entry) => <div className="linked-player-card" key={entry.id}><strong>{entry.kind.replaceAll("_", " ")} · {entry.status}</strong><small>{formatDateTimeLocal(entry.sentAt ?? entry.createdAt)}{entry.error ? ` · ${entry.error}` : ""}</small></div>)}
+              {!editingUser.memberEmails?.length ? <small>Noch keine protokollierten Mitglieder-E-Mails.</small> : null}
+            </section>
+            ) : null}
+
             {detailTab === "Notizen" ? (
             <section className="detail-section">
               <h3>Adminnotiz</h3>
@@ -1950,30 +2201,32 @@ export function AdminDashboard() {
             ) : null}
 
             <div className="detail-panel-actions">
-              <button className="button primary" onClick={saveUserDraft} type="button">
-                Speichern
-              </button>
+              {permissions.includes("members.write") || permissions.includes("members.sports") ? <button className="button primary" onClick={saveUserDraft} type="button">Speichern</button> : null}
               <button className="ghost-button" onClick={() => setEditingUser(null)} type="button">
                 Abbrechen
               </button>
-              <button
+              {permissions.includes("members.write") ? <button
                 className="ghost-button danger"
                 onClick={() => {
                   if (window.confirm("Mitglied wirklich ablehnen?")) {
-                    updateDraft({ membershipType: "MEMBER", membershipStatus: "REJECTED" });
+                    void runMemberAction(editingUser, "reject");
                   }
                 }}
                 type="button"
               >
                 Mitglied ablehnen
-              </button>
-              <button
+              </button> : null}
+              {permissions.includes("members.write") ? <button
                 className="ghost-button"
                 onClick={() => updateDraft({ membershipType: "EXTERNAL", membershipStatus: "VERIFIED", memberNumber: null })}
                 type="button"
               >
                 Als Gastspieler markieren
-              </button>
+              </button> : null}
+              {permissions.includes("members.write") && editingUser.membershipStatus === "PENDING" ? <button className="ghost-button" onClick={() => runMemberAction(editingUser, "approve")} type="button">Mitglied bestätigen</button> : null}
+              {permissions.includes("members.write") ? editingUser.lifecycleStatus === "ACTIVE" ? <button className="ghost-button" onClick={() => runMemberAction(editingUser, "pause")} type="button">Pausieren</button> : <button className="ghost-button" onClick={() => runMemberAction(editingUser, "reactivate")} type="button">Reaktivieren</button> : null}
+              {permissions.includes("members.write") ? <button className="ghost-button" onClick={() => runMemberAction(editingUser, "resign")} type="button">Austritt erfassen</button> : null}
+              {permissions.includes("members.write") ? <button className="ghost-button danger" onClick={() => { if (window.confirm("Mitglied archivieren? Die Daten bleiben revisionssicher erhalten.")) void runMemberAction(editingUser, "archive"); }} type="button">Archivieren</button> : null}
             </div>
           </div>
         </div>

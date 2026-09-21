@@ -6,7 +6,7 @@ export default function AdminPage() {
       <div className="section-heading">
         <p className="eyebrow">Verwaltung</p>
         <h1>Admin-Bereich</h1>
-        <p>Buchungen, Nutzer, Preise, Öffnungszeiten und Platzsperren zentral verwalten.</p>
+        <p>Mitglieder, Beiträge, Arbeitsstunden, Schlüssel, Buchungen und Plätze zentral verwalten.</p>
       </div>
       <AdminDashboard />
     </section>

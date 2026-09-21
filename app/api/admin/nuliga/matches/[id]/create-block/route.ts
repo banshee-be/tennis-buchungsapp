@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { createBlocksForMatch, skipMatchBlock } from "@/lib/nuliga-matches";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("members.sports");
     const { id } = await context.params;
     const body = (await request.json().catch(() => ({}))) as { action?: string };
 

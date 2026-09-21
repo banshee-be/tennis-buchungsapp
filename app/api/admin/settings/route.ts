@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { writeAuditLog } from "@/lib/audit";
 
 export async function GET() {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("settings.manage");
     const settings = await getSettings();
     return NextResponse.json({ settings });
   });
@@ -15,7 +15,7 @@ export async function GET() {
 
 export async function PATCH(request: NextRequest) {
   return handleRoute(async () => {
-    const admin = await requireAdmin();
+    const admin = await requirePermission("settings.manage");
     const body = (await request.json().catch(() => null)) as
       | {
           externalHourlyRateCents?: number;

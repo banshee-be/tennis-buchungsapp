@@ -63,10 +63,10 @@ export async function POST(request: NextRequest) {
         data: {
           name,
           passwordHash,
-          role,
-          membershipType,
-          membershipStatus,
-          memberNumber
+          role: existing.role,
+          membershipType: existing.membershipType,
+          membershipStatus: existing.membershipStatus,
+          memberNumber: existing.memberNumber
         }
       })
     : await prisma.user.create({

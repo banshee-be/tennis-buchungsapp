@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRoute } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { writeAuditLog } from "@/lib/audit";
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    const admin = await requireAdmin();
+    const admin = await requirePermission("courts.manage");
     const { id } = await context.params;
     await prisma.courtBlock.delete({ where: { id } });
     await writeAuditLog({

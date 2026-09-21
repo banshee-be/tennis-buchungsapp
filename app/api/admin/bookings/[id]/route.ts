@@ -11,14 +11,14 @@ import {
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
-import { isVerifiedMember, requireAdmin } from "@/lib/session";
+import { isVerifiedMember, requirePermission } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
 import { refundPayPalBooking } from "@/lib/payment-processing";
 import { writeAuditLog } from "@/lib/audit";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    const admin = await requireAdmin();
+    const admin = await requirePermission("bookings.manage");
     const { id } = await context.params;
     const body = (await request.json().catch(() => null)) as
       | {
@@ -129,7 +129,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
 
 export async function DELETE(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    const admin = await requireAdmin();
+    const admin = await requirePermission("bookings.manage");
     const { id } = await context.params;
     const existing = await prisma.booking.findUnique({ where: { id }, include: { payment: true } });
 

@@ -12,7 +12,9 @@ Produktionsnahe Next.js-Web-App fuer die Platzbuchung eines Tennisvereins. Die O
 - Datenbank-Schutz gegen Doppelbuchungen ueber eindeutige `BookingSlot`-Datensaetze.
 - PayPal Checkout fuer externe Gastspieler, inklusive serverseitigem Capture und verifiziertem Webhook.
 - Automatische PayPal-Rueckerstattung bei fristgerechter Stornierung oder verspaeteter Zahlung nach Ablauf der Reservierung.
-- Admin-Bereich fuer Buchungen, Nutzerstatus, Preise, Oeffnungszeiten, Plaetze und Sperren.
+- Vollständige Mitgliederverwaltung mit Stammdaten, Lebenszyklus, Beiträgen, Arbeitsstunden, Schlüsseln, Kommunikation und nuLiga-Verknüpfung.
+- Rollen und serverseitige Berechtigungen für Super-Admin, Mitgliederverwaltung, Sportwart, Kassenwart und Platzwart.
+- Admin-Bereich für Buchungen, Nutzerstatus, Preise, Öffnungszeiten, Plätze und Sperren.
 - Admin-Uebersicht mit Betriebskennzahlen und nachvollziehbarem Aenderungsprotokoll.
 - Buchungserinnerungen, Kalenderdateien, fehlertoleranter E-Mail-Versand und automatische Datenbereinigung.
 - Datenbankgestuetzter Schutz vor zu vielen Anfragen, auch ueber mehrere Serverinstanzen hinweg.
@@ -122,6 +124,51 @@ Vercel ruft einmal taeglich `/api/cron/daily-maintenance` auf. Der Lauf gibt abg
 Die App prueft die Verfuegbarkeit nicht nur im Browser, sondern immer erneut im API-Endpunkt. Jede Buchung erzeugt pro kleinem Zeitfenster einen `BookingSlot`. Die Datenbank hat darauf einen eindeutigen Index pro Platz und Slot-Startzeit. Dadurch kann selbst bei parallelen Anfragen nur eine Buchung denselben Platz im selben Zeitfenster belegen.
 
 PayPal-Webhooks werden vor der Verarbeitung ueber PayPals `verify-webhook-signature`-API geprueft. Ereignis-IDs und PayPal Capture-IDs sind eindeutig gespeichert, damit Wiederholungen keine zweite Buchungsbestaetigung ausloesen.
+
+## Mitgliederverwaltung
+
+Die Mitgliederverwaltung befindet sich im Adminbereich unter **Mitglieder**. Dort stehen Suche, Filter, Seitennavigation, CSV-Import/Export, manuelle Anlage und ein mehrteiliges Mitgliederprofil zur Verfügung.
+
+Rollen:
+
+- `ADMIN` und `SUPER_ADMIN`: vollständiger Zugriff; `ADMIN` bleibt aus Kompatibilitätsgründen erhalten.
+- `MEMBER_MANAGER`: Stammdaten, Status, Arbeitsstunden, Schlüssel und Exporte.
+- `SPORTS_MANAGER`: Mannschafts- und nuLiga-Zuordnungen sowie Buchungen.
+- `TREASURER`: Beiträge und Mitgliederexport.
+- `COURT_MANAGER`: Buchungen, Plätze und Sperren.
+- `USER`: kein Zugriff auf den Adminbereich.
+
+Kritische Aktionen werden serverseitig geprüft und im Audit-Log erfasst. Archivieren ist eine reversible Statusänderung; Mitgliederdaten werden dabei nicht physisch gelöscht. CSV-Ausgaben neutralisieren Formeln, damit Tabellenprogramme keine Inhalte als Befehle ausführen.
+
+### Datenbank-Update
+
+Nach einem Update muss vor dem Start der neuen Version die Migration ausgeführt werden:
+
+```bash
+npx prisma migrate deploy
+```
+
+Die Migration `20260921000100_member_management` ergänzt Mitgliedsstammdaten sowie Beitrags-, Arbeitsstunden-, Schlüssel- und E-Mail-Historien. Vor einer Produktivmigration sollte wie üblich ein Datenbank-Backup angelegt werden.
+
+### E-Mail-Einladungen
+
+Einladungen und Passwort-Links verwenden dieselbe Resend-Konfiguration wie Buchungsbestätigungen:
+
+- `RESEND_API_KEY`
+- `EMAIL_FROM`
+- `NEXT_PUBLIC_APP_URL` oder `APP_URL`
+
+Jeder Versand wird mit Status, Provider-ID und Fehlertext gespeichert. Wiederholungen innerhalb desselben Verarbeitungsschlüssels werden nicht doppelt versendet.
+
+### Tests
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+Die Tests decken unter anderem Berechtigungen, Dublettenerkennung, idempotente Mitgliederaktionen und sicheren CSV-Export ab.
 
 ## PayPal-Dashboard einrichten
 

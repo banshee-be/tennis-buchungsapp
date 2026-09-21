@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { writeAuditLog } from "@/lib/audit";
 
 export async function PATCH(request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
-    const admin = await requireAdmin();
+    const admin = await requirePermission("courts.manage");
     const { id } = await context.params;
     const body = (await request.json().catch(() => null)) as { isActive?: boolean; notes?: string; name?: string } | null;
 

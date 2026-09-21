@@ -1,11 +1,13 @@
-import { NextResponse } from "next/server";
-import { handleRoute } from "@/lib/http";
+import { NextRequest, NextResponse } from "next/server";
+import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
+import { writeAuditLog } from "@/lib/audit";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET() {
   return handleRoute(async () => {
-    await requireAdmin();
+    const admin = await requirePermission("members.read");
     const users = await prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       select: {
@@ -13,11 +15,26 @@ export async function GET() {
         name: true,
         email: true,
         phoneNumber: true,
+        birthDate: true,
+        street: true,
+        addressAdditional: true,
+        postalCode: true,
+        city: true,
+        country: true,
+        emergencyContactName: true,
+        emergencyContactPhone: true,
+        passwordHash: true,
         role: true,
         isActive: true,
         membershipType: true,
         membershipStatus: true,
+        lifecycleStatus: true,
         memberNumber: true,
+        joinedAt: true,
+        leftAt: true,
+        resignationAt: true,
+        resignationReason: true,
+        archivedAt: true,
         contractType: true,
         contractStartDate: true,
         contractEndDate: true,
@@ -71,7 +88,11 @@ export async function GET() {
         },
         bookings: {
           select: { id: true }
-        }
+        },
+        contributions: { orderBy: { year: "desc" }, take: 3 },
+        workHourEntries: { orderBy: { performedAt: "desc" }, take: 20 },
+        keyAssignments: { orderBy: { issuedAt: "desc" }, take: 10 },
+        memberEmails: { orderBy: { createdAt: "desc" }, take: 10 }
       }
     });
 
@@ -107,6 +128,13 @@ export async function GET() {
     return NextResponse.json({
       users: users.map((user) => ({
         ...user,
+        annualFeeCents: hasPermission(admin.role, "members.finance") ? user.annualFeeCents : null,
+        contributions: hasPermission(admin.role, "members.finance") ? user.contributions : [],
+        workHourEntries: hasPermission(admin.role, "members.write") ? user.workHourEntries : [],
+        keyAssignments: hasPermission(admin.role, "members.keys") ? user.keyAssignments : [],
+        memberEmails: hasPermission(admin.role, "members.write") ? user.memberEmails : [],
+        hasAccount: Boolean(user.passwordHash),
+        passwordHash: undefined,
         teamPlayers: user.teamPlayerLinks.map((link) => link.teamPlayer),
         bookingCount: user.bookings.length,
         contractStartDate: user.contractStartDate?.toISOString() ?? null,
@@ -114,6 +142,11 @@ export async function GET() {
         keyIssuedAt: user.keyIssuedAt?.toISOString() ?? null,
         keyReturnedAt: user.keyReturnedAt?.toISOString() ?? null,
         lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+        birthDate: user.birthDate?.toISOString() ?? null,
+        joinedAt: user.joinedAt?.toISOString() ?? null,
+        leftAt: user.leftAt?.toISOString() ?? null,
+        resignationAt: user.resignationAt?.toISOString() ?? null,
+        archivedAt: user.archivedAt?.toISOString() ?? null,
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
         bookings: undefined,
@@ -121,5 +154,42 @@ export async function GET() {
       })),
       teamPlayers
     });
+  });
+}
+
+export async function POST(request: NextRequest) {
+  return handleRoute(async () => {
+    const admin = await requirePermission("members.write");
+    const body = (await request.json().catch(() => null)) as { name?: string; email?: string; memberNumber?: string; phoneNumber?: string } | null;
+    const name = body?.name?.trim();
+    const email = body?.email?.trim().toLowerCase();
+    if (!name || !email || !email.includes("@")) return jsonError("Name und gültige E-Mail-Adresse sind erforderlich.");
+
+    const duplicate = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          ...(body?.memberNumber?.trim() ? [{ memberNumber: body.memberNumber.trim() }] : [])
+        ]
+      },
+      select: { id: true, name: true, email: true }
+    });
+    if (duplicate) return jsonError(`Mögliche Dublette: ${duplicate.name} (${duplicate.email}).`, 409);
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email,
+        phoneNumber: body?.phoneNumber?.trim() || null,
+        memberNumber: body?.memberNumber?.trim() || null,
+        membershipType: "MEMBER",
+        membershipStatus: "PENDING",
+        lifecycleStatus: "ACTIVE",
+        joinedAt: new Date(),
+        role: "USER"
+      }
+    });
+    await writeAuditLog({ actorUserId: admin.id, action: "MEMBER_CREATED", entityType: "User", entityId: user.id, request });
+    return NextResponse.json({ user }, { status: 201 });
   });
 }

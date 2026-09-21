@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
 import { isVerifiedMember, requireSession } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
+import { hasPermission } from "@/lib/permissions";
 
 export async function GET() {
   return handleRoute(async () => {
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
     const isMember = isVerifiedMember(user);
     const amountCents = isMember ? 0 : calculateAmountCents(settings.externalHourlyRateCents, parsed.durationMinutes);
     let bookingIdForCleanup: string | null = null;
-    const isAdmin = user.role === "ADMIN";
+    const isAdmin = hasPermission(user.role, "bookings.manage");
 
     if (!isAdmin) {
       const activeBookings = await prisma.booking.count({

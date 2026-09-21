@@ -8,7 +8,8 @@ type User = {
   id: string;
   name: string;
   email: string;
-  role: "USER" | "ADMIN";
+  role: "USER" | "ADMIN" | "SUPER_ADMIN" | "MEMBER_MANAGER" | "SPORTS_MANAGER" | "TREASURER" | "COURT_MANAGER";
+  permissions?: string[];
   membershipType: "MEMBER" | "EXTERNAL";
   membershipStatus: "PENDING" | "VERIFIED" | "REJECTED";
   memberNumber?: string | null;
@@ -162,7 +163,7 @@ export function Header({ clubName }: { clubName: string }) {
       <Link href="/#kontakt" onClick={() => setMenuOpen(false)}>
         Kontakt
       </Link>
-      {user?.role === "ADMIN" ? (
+      {user?.permissions?.includes("admin.access") ? (
         <Link href="/admin" onClick={() => setMenuOpen(false)}>
           Admin
         </Link>

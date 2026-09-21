@@ -27,12 +27,27 @@ model User {
   name             String
   email            String           @unique
   phoneNumber      String?
+  birthDate        DateTime?
+  street           String?
+  addressAdditional String?
+  postalCode       String?
+  city             String?
+  country          String           @default("Deutschland")
+  emergencyContactName  String?
+  emergencyContactPhone String?
   passwordHash     String?
   role             String           @default("USER")
   isActive         Boolean          @default(true)
   membershipType   String           @default("EXTERNAL")
   membershipStatus String           @default("VERIFIED")
+  lifecycleStatus  String           @default("ACTIVE")
   memberNumber     String?
+  joinedAt         DateTime?
+  leftAt           DateTime?
+  resignationAt    DateTime?
+  resignationReason String?
+  archivedAt       DateTime?
+  anonymizedAt     DateTime?
   teamPlayerId     String?
   contractType     ContractType     @default(NONE)
   contractStartDate DateTime?
@@ -55,6 +70,89 @@ model User {
   teamPlayer       TeamPlayer?      @relation(fields: [teamPlayerId], references: [id], onDelete: SetNull)
   teamPlayerLinks  UserTeamPlayer[]
   auditLogs        AuditLog[]
+  contributions    MemberContribution[]
+  workHourEntries  MemberWorkHour[]       @relation("MemberWorkOwner")
+  createdWorkHours MemberWorkHour[]       @relation("MemberWorkCreator")
+  keyAssignments   MemberKeyAssignment[]  @relation("MemberKeyOwner")
+  createdKeyAssignments MemberKeyAssignment[] @relation("MemberKeyCreator")
+  memberEmails     MemberEmail[]
+
+  @@index([membershipType, membershipStatus, lifecycleStatus])
+  @@index([memberNumber])
+  @@index([archivedAt])
+}
+
+model MemberContribution {
+  id            String   @id @default(cuid())
+  userId        String
+  year          Int
+  amountDueCents Int
+  amountPaidCents Int    @default(0)
+  status        String   @default("OPEN")
+  dueDate       DateTime?
+  paidAt        DateTime?
+  paymentMethod String?
+  isExempt      Boolean  @default(false)
+  note          String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year])
+  @@index([year, status])
+}
+
+model MemberWorkHour {
+  id               String   @id @default(cuid())
+  userId           String
+  minutes          Int
+  activity         String
+  performedAt      DateTime
+  correctionReason String?
+  createdById      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user             User     @relation("MemberWorkOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy        User?    @relation("MemberWorkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, performedAt])
+}
+
+model MemberKeyAssignment {
+  id            String   @id @default(cuid())
+  userId        String
+  keyType       KeyType
+  keyNumber     String?
+  issuedAt      DateTime
+  returnedAt    DateTime?
+  depositCents  Int?
+  depositStatus String   @default("NOT_REQUIRED")
+  note          String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  user          User     @relation("MemberKeyOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy     User?    @relation("MemberKeyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, returnedAt])
+  @@index([keyNumber])
+}
+
+model MemberEmail {
+  id             String   @id @default(cuid())
+  userId         String
+  kind           String
+  idempotencyKey String   @unique
+  status         String   @default("PENDING")
+  providerId     String?
+  error          String?
+  sentAt         DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
 }
 
 model Court {

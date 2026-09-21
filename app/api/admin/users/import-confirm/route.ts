@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { CsvImportUser } from "@/lib/admin-user-csv";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 
 function dateOrNull(value?: string | null) {
   if (!value) {
@@ -14,7 +14,7 @@ function dateOrNull(value?: string | null) {
 
 export async function POST(request: NextRequest) {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("members.write");
     const body = (await request.json().catch(() => null)) as { rows?: CsvImportUser[] } | null;
 
     if (!body?.rows?.length) {

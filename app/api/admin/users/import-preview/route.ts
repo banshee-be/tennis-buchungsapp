@@ -2,11 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseImportRows } from "@/lib/admin-user-csv";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("members.write");
     const formData = await request.formData();
     const file = formData.get("file");
 

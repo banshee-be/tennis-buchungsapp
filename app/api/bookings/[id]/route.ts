@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getSettings } from "@/lib/settings";
 import { refundPayPalBooking } from "@/lib/payment-processing";
 import { requireSession } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 
 export async function DELETE(_request: NextRequest, context: { params: Promise<{ id: string }> }) {
   return handleRoute(async () => {
@@ -12,11 +13,12 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     const { id } = await context.params;
     const booking = await prisma.booking.findUnique({ where: { id }, include: { payment: true } });
 
-    if (!booking || (booking.userId !== session.id && session.role !== "ADMIN")) {
+    const canManageBookings = hasPermission(session.role, "bookings.manage");
+    if (!booking || (booking.userId !== session.id && !canManageBookings)) {
       return jsonError("Buchung nicht gefunden.", 404);
     }
 
-    if (session.role !== "ADMIN") {
+    if (!canManageBookings) {
       const settings = await getSettings();
       await assertUserCanCancelBooking(booking, settings.cancellationDeadlineHours);
     }
@@ -24,7 +26,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     if (booking.payment?.status === "PAID") {
       const refunded = await refundPayPalBooking(
         id,
-        session.role === "ADMIN" ? "Vom Admin storniert und zurückerstattet." : "Vom Nutzer storniert und zurückerstattet."
+        canManageBookings ? "Vom Admin storniert und zurückerstattet." : "Vom Nutzer storniert und zurückerstattet."
       );
 
       if (refunded) {
@@ -33,7 +35,7 @@ export async function DELETE(_request: NextRequest, context: { params: Promise<{
     }
 
     const cancelled = await prisma.$transaction((tx) =>
-      cancelBooking(tx, id, session.role === "ADMIN" ? "Vom Admin storniert." : "Vom Nutzer storniert.")
+      cancelBooking(tx, id, canManageBookings ? "Vom Admin storniert." : "Vom Nutzer storniert.")
     );
 
     return NextResponse.json({ booking: serializeBooking(cancelled) });

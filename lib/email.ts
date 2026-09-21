@@ -108,6 +108,56 @@ export async function sendPasswordResetEmail({ email, resetUrl }: PasswordResetE
   });
 }
 
+export async function sendMemberEmail({
+  email,
+  name,
+  kind,
+  actionUrl,
+  idempotencyKey
+}: {
+  email: string;
+  name: string;
+  kind: "APPROVED" | "REJECTED" | "PAUSED" | "REACTIVATED" | "INVITATION" | "PASSWORD_RESET";
+  actionUrl?: string;
+  idempotencyKey: string;
+}) {
+  const content = {
+    APPROVED: {
+      subject: "Ihre Vereinsmitgliedschaft wurde bestätigt",
+      message: "Ihre Mitgliedschaft wurde bestätigt. Sie können die Tennisplatz-Buchungsplattform jetzt als Mitglied verwenden."
+    },
+    REJECTED: {
+      subject: "Status Ihrer Mitgliedschaft",
+      message: "Ihre beantragte Mitgliedschaft konnte derzeit nicht bestätigt werden. Bitte wenden Sie sich bei Rückfragen an den Verein."
+    },
+    PAUSED: {
+      subject: "Ihre Mitgliedschaft wurde pausiert",
+      message: "Ihre Mitgliedschaft wurde vorübergehend pausiert."
+    },
+    REACTIVATED: {
+      subject: "Ihre Mitgliedschaft ist wieder aktiv",
+      message: "Ihre Mitgliedschaft wurde reaktiviert."
+    },
+    INVITATION: {
+      subject: "Einladung zur Tennisplatz-Buchungsplattform",
+      message: "Für Sie wurde ein Mitgliedskonto angelegt. Legen Sie über den folgenden Link Ihr Passwort fest."
+    },
+    PASSWORD_RESET: {
+      subject: "Passwort für Ihr Mitgliedskonto zurücksetzen",
+      message: "Über den folgenden Link können Sie ein neues Passwort festlegen."
+    }
+  }[kind];
+  const linkText = actionUrl ? `\n\nLink (60 Minuten gültig):\n${actionUrl}` : "";
+  const safeUrl = actionUrl ? escapeHtml(actionUrl) : "";
+  return sendEmail({
+    to: email,
+    subject: content.subject,
+    text: `Hallo ${name},\n\n${content.message}${linkText}`,
+    html: `<p>Hallo ${escapeHtml(name)},</p><p>${escapeHtml(content.message)}</p>${safeUrl ? `<p><a href="${safeUrl}">Konto öffnen</a><br><small>Dieser Link ist 60 Minuten gültig.</small></p>` : ""}`,
+    idempotencyKey
+  });
+}
+
 export async function sendAdminNewRegistrationEmail(user: RegistrationUser) {
   const recipients = adminRecipients();
 

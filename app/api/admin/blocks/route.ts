@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 import { buildUtcDate, timeToMinutes } from "@/lib/time";
 import { writeAuditLog } from "@/lib/audit";
 
 export async function GET() {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("courts.manage");
     const blocks = await prisma.courtBlock.findMany({
       include: { court: true },
       orderBy: { startTime: "desc" },
@@ -26,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return handleRoute(async () => {
-    const admin = await requireAdmin();
+    const admin = await requirePermission("courts.manage");
     const body = (await request.json().catch(() => null)) as
       | { courtId?: number; date?: string; startTime?: string; endTime?: string; title?: string; reason?: string }
       | null;

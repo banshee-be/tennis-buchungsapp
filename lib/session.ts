@@ -2,10 +2,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import type { User } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { hasPermission, normalizeRole, permissionsForRole, type AppRole, type Permission } from "@/lib/permissions";
 
 const COOKIE_NAME = "tennis_session";
 
-export type UserRole = "USER" | "ADMIN";
+export type UserRole = AppRole;
 export type MembershipType = "MEMBER" | "EXTERNAL";
 export type MembershipStatus = "PENDING" | "VERIFIED" | "REJECTED";
 
@@ -17,6 +18,7 @@ export type SessionUser = {
   membershipType: MembershipType;
   membershipStatus: MembershipStatus;
   memberNumber?: string | null;
+  permissions: Permission[];
 };
 
 function getSecret() {
@@ -50,11 +52,12 @@ export function toSessionUser(
     id: user.id,
     name: user.name,
     email: user.email,
-    role: user.role === "ADMIN" ? "ADMIN" : "USER",
+    role: normalizeRole(user.role),
     membershipType: user.membershipType === "MEMBER" ? "MEMBER" : "EXTERNAL",
     membershipStatus:
       user.membershipStatus === "PENDING" || user.membershipStatus === "REJECTED" ? user.membershipStatus : "VERIFIED",
-    memberNumber: user.memberNumber
+    memberNumber: user.memberNumber,
+    permissions: permissionsForRole(user.role)
   };
 }
 
@@ -71,7 +74,7 @@ export async function createSession(
     sameSite: embeddedCookieMode ? "none" : "lax",
     secure: process.env.NODE_ENV === "production" || embeddedCookieMode,
     path: "/",
-    maxAge: user.role === "ADMIN" ? 60 * 60 * 12 : 60 * 60 * 24 * 30
+    maxAge: hasPermission(user.role, "admin.access") ? 60 * 60 * 12 : 60 * 60 * 24 * 30
   });
 }
 
@@ -115,11 +118,19 @@ export async function requireAdmin() {
   const session = await requireSession();
   const user = await prisma.user.findUnique({ where: { id: session.id } });
 
-  if (!user || user.role !== "ADMIN") {
+  if (!user || !hasPermission(user.role, "admin.access")) {
     throw new Response("Kein Zugriff auf den Admin-Bereich", { status: 403 });
   }
 
   return toSessionUser(user);
+}
+
+export async function requirePermission(permission: Permission) {
+  const admin = await requireAdmin();
+  if (!hasPermission(admin.role, permission)) {
+    throw new Response("Keine Berechtigung für diese Aktion", { status: 403 });
+  }
+  return admin;
 }
 
 export function isAdminEmail(email: string) {

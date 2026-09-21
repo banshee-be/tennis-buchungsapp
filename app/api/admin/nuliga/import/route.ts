@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import { handleRoute, jsonError } from "@/lib/http";
 import { getNuLigaSummary, importNuLigaClubData } from "@/lib/nuliga";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 
 export async function GET() {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("members.sports");
     return NextResponse.json(await getNuLigaSummary());
   });
 }
 
 export async function POST() {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("members.sports");
 
     try {
       return NextResponse.json(await importNuLigaClubData());

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { toCsv } from "@/lib/admin-user-csv";
 import { handleRoute } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin } from "@/lib/session";
+import { requirePermission } from "@/lib/session";
 
 const contractLabels: Record<string, string> = {
   FULL_MEMBER: "Vollmitglied",
@@ -21,7 +21,7 @@ const keyLabels: Record<string, string> = {
 
 export async function GET() {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("members.export");
     const users = await prisma.user.findMany({
       orderBy: { name: "asc" },
       include: {
@@ -36,9 +36,21 @@ export async function GET() {
         "Name",
         "E-Mail",
         "Telefonnummer",
+        "Geburtsdatum",
+        "Straße",
+        "Adresszusatz",
+        "PLZ",
+        "Ort",
+        "Land",
+        "Notfallkontakt",
+        "Notfall-Telefon",
         "Mitgliedsnummer",
         "Kontotyp",
         "Mitgliedsstatus",
+        "Lebenszyklus",
+        "Eintritt",
+        "Austritt",
+        "Austrittsgrund",
         "Rolle",
         "Vertragsstatus",
         "Beitrag",
@@ -70,10 +82,22 @@ export async function GET() {
         user.name,
         user.email,
         user.phoneNumber ?? "",
+        user.birthDate?.toISOString().slice(0, 10) ?? "",
+        user.street ?? "",
+        user.addressAdditional ?? "",
+        user.postalCode ?? "",
+        user.city ?? "",
+        user.country,
+        user.emergencyContactName ?? "",
+        user.emergencyContactPhone ?? "",
         user.memberNumber ?? "",
         user.membershipType === "MEMBER" ? "Mitglied" : "Gastspieler",
         user.membershipStatus,
-        user.role === "ADMIN" ? "Admin" : "Nutzer",
+        user.lifecycleStatus,
+        user.joinedAt?.toISOString().slice(0, 10) ?? "",
+        user.leftAt?.toISOString().slice(0, 10) ?? "",
+        user.resignationReason ?? "",
+        user.role,
         contractLabels[user.contractType],
         user.annualFeeCents === null || user.annualFeeCents === undefined ? "" : String(user.annualFeeCents / 100),
         user.workHoursRequired ?? "",

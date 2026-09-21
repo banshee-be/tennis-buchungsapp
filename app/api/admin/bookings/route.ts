@@ -10,12 +10,12 @@ import {
 import { handleRoute, jsonError } from "@/lib/http";
 import { prisma } from "@/lib/prisma";
 import { calculateAmountCents, getSettings } from "@/lib/settings";
-import { isAdminEmail, requireAdmin } from "@/lib/session";
+import { isAdminEmail, requirePermission } from "@/lib/session";
 import { parseBookingInput } from "@/lib/time";
 
 export async function GET() {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("bookings.manage");
     await releaseExpiredPendingBookings(prisma);
 
     const bookings = await prisma.booking.findMany({
@@ -31,7 +31,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return handleRoute(async () => {
-    await requireAdmin();
+    await requirePermission("bookings.manage");
     const body = (await request.json().catch(() => null)) as
       | {
           name?: string;
